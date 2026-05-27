@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/status-badge";
+import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 export default async function LeadDetalhePage({
@@ -28,6 +29,15 @@ export default async function LeadDetalhePage({
     .select("id, data_inicio, data_fim, status, meet_link, observacoes")
     .eq("lead_id", id)
     .order("data_inicio", { ascending: false });
+
+  // Busca histórico de mensagens
+  const { data: mensagens } = await supabase
+    .from("mensagens")
+    .select(
+      "id, conteudo, tipo, attachment_url, direcao, remetente_nome, created_at",
+    )
+    .eq("lead_id", id)
+    .order("created_at", { ascending: true });
 
   const statusConfig = STATUS_CONFIG[lead.status as StatusLead];
 
@@ -76,12 +86,9 @@ export default async function LeadDetalhePage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Coluna esquerda — Info */}
         <div className="md:col-span-2 space-y-6">
-          {/* Timeline placeholder */}
+          {/* Histórico de mensagens */}
           <Card titulo="Conversa">
-            <p className="text-sm text-cinza-medio text-center py-8">
-              🚧 Em construção — vai mostrar o histórico de conversa do Chatwoot
-              aqui.
-            </p>
+            <TimelineMensagens mensagens={mensagens ?? []} />
           </Card>
 
           {/* Agendamentos */}
