@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/status-badge";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 export default async function LeadDetalhePage({
@@ -43,6 +44,8 @@ export default async function LeadDetalhePage({
 
   return (
     <div>
+      <AutoRefresh intervalMs={5000} />
+
       {/* Breadcrumb */}
       <Link
         href="/dashboard/leads"
