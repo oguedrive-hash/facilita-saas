@@ -7,6 +7,11 @@ import {
 } from "@/lib/caio/tenant";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { transcreverAudio } from "@/lib/caio/openai";
+import { gerarAudio } from "@/lib/caio/elevenlabs";
+import {
+  enviarMensagem,
+  enviarMensagemComAudio,
+} from "@/lib/caio/chatwoot-api";
 import {
   normalizeMessageType,
   type ChatwootWebhook,
@@ -94,9 +99,10 @@ async function processWebhook(webhook: ChatwootWebhook) {
     `(${Date.now() - startedAt}ms)`,
   );
 
-  // Gera shadow pra cada lead que recebeu mensagem nova
+  // Pra cada lead com incoming nova: gera resposta + envia pelo Chatwoot.
+  // Substituiu a etapa de "shadow" — agora o painel é o motor principal.
   for (const leadId of leadsComIncomingNova) {
-    await gerarShadowParaLead(supabase, org.id, leadId);
+    await responderLeadAuto(supabase, org.id, leadId);
   }
 }
 
@@ -181,12 +187,18 @@ function extrairMensagens(webhook: ChatwootWebhook): MensagemNormalizada[] {
 }
 
 /**
- * Gera shadow response — chama OpenAI com o histórico do lead e grava
- * uma "mensagem fantasma" (shadow=true) no banco. Não envia pelo Chatwoot.
- * Serve pra comparar o que o painel responderia com o que o Caio do n8n
- * efetivamente respondeu.
+ * Caio responde o lead automaticamente.
+ *
+ * 1. Verifica se Caio tá ativo (se humano assumiu via agente-off, não responde)
+ * 2. Gera resposta texto via OpenAI
+ * 3. Se a ÚLTIMA mensagem do lead foi áudio, converte resposta em áudio TTS
+ *    (ElevenLabs) e envia como attachment de áudio
+ * 4. Senão, envia como texto
+ * 5. NÃO grava no banco aqui — webhook de conversation_updated vai voltar
+ *    com a mensagem outgoing e o handler grava normal (dedup pelo
+ *    chatwoot_message_id)
  */
-async function gerarShadowParaLead(
+async function responderLeadAuto(
   supabase: ReturnType<typeof createAdminClient>,
   organizationId: string,
   leadId: string,
@@ -197,29 +209,73 @@ async function gerarShadowParaLead(
     .eq("id", leadId)
     .single();
 
-  // Se Caio tá desligado, não gera shadow (humano assumiu mesmo)
   if (!lead || !lead.caio_ativo) return;
-
-  const result = await gerarRespostaCaio({ leadId });
-  if ("error" in result) {
-    console.warn("[caio:shadow]", "erro ao gerar:", result.error);
+  if (!lead.chatwoot_conversation_id) {
+    console.warn("[caio:auto]", "lead sem conversation_id:", leadId);
     return;
   }
 
-  await supabase.from("mensagens").insert({
-    organization_id: organizationId,
-    lead_id: leadId,
-    chatwoot_message_id: null, // null pra evitar conflict com webhook
-    chatwoot_conversation_id: lead.chatwoot_conversation_id,
-    conteudo: result.resposta,
-    tipo: "texto",
-    direcao: "saida",
-    remetente_nome: "Caio IA (shadow)",
-    privada: false,
-    shadow: true,
-  });
+  // Olha o tipo da última mensagem incoming pra decidir formato da resposta
+  const { data: ultimaIncoming } = await supabase
+    .from("mensagens")
+    .select("tipo")
+    .eq("lead_id", leadId)
+    .eq("direcao", "entrada")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  const responderComAudio = ultimaIncoming?.tipo === "audio";
 
-  console.log("[caio:shadow]", "gerada pra lead", leadId);
+  // Gera resposta
+  const result = await gerarRespostaCaio({ leadId });
+  if ("error" in result) {
+    console.error("[caio:auto]", "erro ao gerar:", result.error);
+    return;
+  }
+  const texto = result.resposta;
+
+  if (responderComAudio) {
+    // TTS via ElevenLabs + envia áudio no Chatwoot
+    const tts = await gerarAudio({ texto });
+    if ("error" in tts) {
+      console.warn(
+        "[caio:auto]",
+        "TTS falhou, caindo pra texto:",
+        tts.error,
+      );
+      // Fallback: envia texto se TTS falhou
+      const sent = await enviarMensagem({
+        conversationId: lead.chatwoot_conversation_id,
+        content: texto,
+      });
+      if ("error" in sent) {
+        console.error("[caio:auto]", "envio fallback falhou:", sent.error);
+      }
+      return;
+    }
+
+    const sent = await enviarMensagemComAudio({
+      conversationId: lead.chatwoot_conversation_id,
+      audio: tts.audio,
+      filename: "caio.mp3",
+      mimeType: tts.mimeType,
+    });
+    if ("error" in sent) {
+      console.error("[caio:auto]", "envio áudio falhou:", sent.error);
+      return;
+    }
+    console.log("[caio:auto]", "respondeu áudio pra lead", leadId);
+  } else {
+    const sent = await enviarMensagem({
+      conversationId: lead.chatwoot_conversation_id,
+      content: texto,
+    });
+    if ("error" in sent) {
+      console.error("[caio:auto]", "envio texto falhou:", sent.error);
+      return;
+    }
+    console.log("[caio:auto]", "respondeu texto pra lead", leadId);
+  }
 }
 
 async function processarMensagem(

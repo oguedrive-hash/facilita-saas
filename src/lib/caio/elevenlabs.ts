@@ -1,0 +1,62 @@
+/**
+ * Cliente ElevenLabs minimalista — gera áudio a partir de texto.
+ * Server-side only. Usa ELEVENLABS_API_KEY do .env.
+ *
+ * Voice settings espelham o padrão da Facilita (definido na tabela
+ * organizations, mas hoje hardcoded até implementarmos multi-tenant de
+ * verdade nas configs de voz).
+ */
+
+export type GerarAudioResult =
+  | { audio: ArrayBuffer; mimeType: string }
+  | { error: string };
+
+export async function gerarAudio(opts: {
+  texto: string;
+  voiceId?: string;
+}): Promise<GerarAudioResult> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return { error: "ELEVENLABS_API_KEY não definida" };
+
+  const voiceId =
+    opts.voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? "";
+  if (!voiceId) return { error: "voice_id não definida" };
+
+  try {
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": key,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: opts.texto,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.25,
+            similarity_boost: 0.9,
+            style: 0.75,
+            use_speaker_boost: true,
+          },
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        error: `ElevenLabs ${res.status}: ${text.slice(0, 300)}`,
+      };
+    }
+
+    const audio = await res.arrayBuffer();
+    return { audio, mimeType: "audio/mpeg" };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "fetch failed",
+    };
+  }
+}

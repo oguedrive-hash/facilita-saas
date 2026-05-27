@@ -84,6 +84,61 @@ export async function enviarMensagem(opts: {
 }
 
 /**
+ * Envia uma mensagem outgoing COM áudio anexado.
+ * Usa multipart/form-data porque tem arquivo.
+ */
+export async function enviarMensagemComAudio(opts: {
+  conversationId: number;
+  audio: ArrayBuffer;
+  filename?: string;
+  mimeType?: string;
+  content?: string;
+}): Promise<{ id: number } | { error: string }> {
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  const form = new FormData();
+  form.set("message_type", "outgoing");
+  form.set("private", "false");
+  if (opts.content) form.set("content", opts.content);
+  const blob = new Blob([opts.audio], {
+    type: opts.mimeType ?? "audio/mpeg",
+  });
+  const file = new File([blob], opts.filename ?? "audio.mp3", {
+    type: opts.mimeType ?? "audio/mpeg",
+  });
+  form.append("attachments[]", file);
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/conversations/${opts.conversationId}/messages`,
+      {
+        method: "POST",
+        headers: { api_access_token: token }, // sem Content-Type — fetch seta com boundary
+        body: form,
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        error: `Chatwoot ${res.status}: ${text.slice(0, 300)}`,
+      };
+    }
+    const data = (await res.json()) as { id: number };
+    return { id: data.id };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "fetch failed",
+    };
+  }
+}
+
+/**
  * Aplica (substitui) etiquetas numa conversa.
  */
 export async function setLabels(opts: {
