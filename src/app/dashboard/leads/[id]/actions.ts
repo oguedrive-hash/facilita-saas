@@ -10,7 +10,7 @@ import {
   getLabels,
   toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
-import { chatCompletion } from "@/lib/caio/openai";
+import { chatCompletion, transcreverAudio } from "@/lib/caio/openai";
 import { RESUMO_PROMPT } from "@/lib/caio/system-prompt";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import type { StatusLead } from "@/lib/status-config";
@@ -351,6 +351,44 @@ export async function gerarSugestaoResposta(formData: FormData): Promise<
   const result = await gerarRespostaCaio({ leadId });
   if ("error" in result) return { error: result.error };
   return { ok: true, sugestao: result.resposta };
+}
+
+/**
+ * Força transcrição (ou re-transcrição) de uma mensagem de áudio.
+ * Útil pra áudios antigos que não foram transcritos por falta de env
+ * var na hora do webhook, ou pra regerar uma transcrição ruim.
+ */
+export async function retranscreverAudio(formData: FormData): Promise<
+  { ok: true; texto: string } | { error: string }
+> {
+  const mensagemId = formData.get("mensagemId");
+  if (typeof mensagemId !== "string" || !mensagemId) {
+    return { error: "mensagemId ausente" };
+  }
+
+  const supabase = await createClient();
+  const { data: msg, error } = await supabase
+    .from("mensagens")
+    .select("id, lead_id, tipo, attachment_url")
+    .eq("id", mensagemId)
+    .single();
+  if (error || !msg) return { error: "Mensagem não encontrada" };
+  if (msg.tipo !== "audio") return { error: "Mensagem não é áudio" };
+  if (!msg.attachment_url) return { error: "Áudio sem URL pra baixar" };
+
+  const result = await transcreverAudio({ audioUrl: msg.attachment_url });
+  if ("error" in result) {
+    return { error: `Whisper falhou: ${result.error}` };
+  }
+
+  const admin = createAdminClient();
+  await admin
+    .from("mensagens")
+    .update({ conteudo: result.texto })
+    .eq("id", mensagemId);
+
+  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  return { ok: true, texto: result.texto };
 }
 
 /**

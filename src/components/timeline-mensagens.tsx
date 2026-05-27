@@ -1,3 +1,5 @@
+import { BotaoRetranscrever } from "./botao-retranscrever";
+
 type Mensagem = {
   id: string;
   conteudo: string | null;
@@ -83,9 +85,13 @@ function ConteudoMensagem({ mensagem }: { mensagem: Mensagem }) {
           </p>
         ) : (
           <p className="text-xs mt-1 italic opacity-60">
-            Transcrevendo...
+            Sem transcrição
           </p>
         )}
+        <BotaoRetranscrever
+          mensagemId={mensagem.id}
+          temConteudo={Boolean(mensagem.conteudo)}
+        />
       </div>
     );
   }
