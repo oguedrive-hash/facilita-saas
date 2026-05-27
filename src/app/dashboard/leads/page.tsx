@@ -5,8 +5,11 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
+type CaioFilter = "todos" | "on" | "off";
+
 type FilterParams = {
   status?: StatusLead | "todos";
+  caio?: CaioFilter;
 };
 
 export default async function LeadsPage({
@@ -14,7 +17,8 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<FilterParams>;
 }) {
-  const { status: statusFilter = "todos" } = await searchParams;
+  const { status: statusFilter = "todos", caio: caioFilter = "todos" } =
+    await searchParams;
   const supabase = await createClient();
 
   let query = supabase
@@ -28,15 +32,38 @@ export default async function LeadsPage({
   if (statusFilter !== "todos") {
     query = query.eq("status", statusFilter);
   }
+  if (caioFilter === "on") query = query.eq("caio_ativo", true);
+  if (caioFilter === "off") query = query.eq("caio_ativo", false);
 
   const { data: leads, error } = await query;
 
-  // Contagens por status (pro filtro)
-  const { data: contagensRaw } = await supabase.from("leads").select("status");
-  const contagens: Record<string, number> = { todos: contagensRaw?.length ?? 0 };
+  // Contagens por status e caio (pros filtros)
+  const { data: contagensRaw } = await supabase
+    .from("leads")
+    .select("status, caio_ativo");
+  const contagens: Record<string, number> = {
+    todos: contagensRaw?.length ?? 0,
+    caio_on: 0,
+    caio_off: 0,
+  };
   contagensRaw?.forEach((l) => {
     contagens[l.status] = (contagens[l.status] ?? 0) + 1;
+    if (l.caio_ativo) contagens.caio_on++;
+    else contagens.caio_off++;
   });
+
+  function buildHref(opts: {
+    status?: StatusLead | "todos";
+    caio?: CaioFilter;
+  }): string {
+    const params = new URLSearchParams();
+    const s = opts.status ?? statusFilter;
+    const c = opts.caio ?? caioFilter;
+    if (s !== "todos") params.set("status", s);
+    if (c !== "todos") params.set("caio", c);
+    const qs = params.toString();
+    return qs ? `/dashboard/leads?${qs}` : "/dashboard/leads";
+  }
 
   return (
     <div>
@@ -46,12 +73,12 @@ export default async function LeadsPage({
       />
 
       {/* Filtros de status */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-3">
         <FilterChip
           label="Todos"
           count={contagens.todos}
           active={statusFilter === "todos"}
-          href="/dashboard/leads"
+          href={buildHref({ status: "todos" })}
         />
         {(Object.keys(STATUS_CONFIG) as StatusLead[])
           .sort((a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem)
@@ -61,9 +88,34 @@ export default async function LeadsPage({
               label={STATUS_CONFIG[status].label}
               count={contagens[status] ?? 0}
               active={statusFilter === status}
-              href={`/dashboard/leads?status=${status}`}
+              href={buildHref({ status })}
             />
           ))}
+      </div>
+
+      {/* Filtros do Caio */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <FilterChip
+          label="Caio: todos"
+          count={contagens.todos}
+          active={caioFilter === "todos"}
+          href={buildHref({ caio: "todos" })}
+          variant="subtle"
+        />
+        <FilterChip
+          label="🟢 Caio respondendo"
+          count={contagens.caio_on}
+          active={caioFilter === "on"}
+          href={buildHref({ caio: "on" })}
+          variant="subtle"
+        />
+        <FilterChip
+          label="🔴 Caio desligado"
+          count={contagens.caio_off}
+          active={caioFilter === "off"}
+          href={buildHref({ caio: "off" })}
+          variant="subtle"
+        />
       </div>
 
       {/* Erro */}
@@ -77,11 +129,11 @@ export default async function LeadsPage({
       {!leads || leads.length === 0 ? (
         <EmptyState
           icone="📭"
-          titulo="Nenhum lead ainda"
+          titulo="Nenhum lead encontrado"
           descricao={
-            statusFilter === "todos"
+            statusFilter === "todos" && caioFilter === "todos"
               ? "Quando alguém mandar mensagem no WhatsApp, vai aparecer aqui automaticamente."
-              : `Nenhum lead com status "${STATUS_CONFIG[statusFilter as StatusLead]?.label}" no momento.`
+              : "Nenhum lead com os filtros atuais."
           }
         />
       ) : (
@@ -154,16 +206,20 @@ function FilterChip({
   count,
   active,
   href,
+  variant = "default",
 }: {
   label: string;
   count: number;
   active: boolean;
   href: string;
+  variant?: "default" | "subtle";
 }) {
+  const baseSize =
+    variant === "subtle" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
   return (
     <Link
       href={href}
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-heading font-medium transition ${
+      className={`inline-flex items-center gap-2 rounded-full font-heading font-medium transition ${baseSize} ${
         active
           ? "bg-preto text-white"
           : "bg-white text-cinza-medio border border-cinza-claro hover:border-laranja hover:text-preto"
@@ -171,7 +227,7 @@ function FilterChip({
     >
       {label}
       <span
-        className={`text-xs px-1.5 py-0.5 rounded-full ${
+        className={`text-[10px] px-1.5 py-0.5 rounded-full ${
           active ? "bg-white/20" : "bg-cinza-claro"
         }`}
       >
