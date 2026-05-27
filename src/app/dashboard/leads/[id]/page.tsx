@@ -7,6 +7,7 @@ import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ToggleCaio } from "@/components/toggle-caio";
 import { NotasLead } from "@/components/notas-lead";
+import { ResumoIA } from "@/components/resumo-ia";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
 import { getLabels } from "@/lib/caio/chatwoot-api";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
@@ -176,6 +177,14 @@ export default async function LeadDetalhePage({
 
         {/* Coluna direita — Metadata */}
         <div className="space-y-6">
+          <Card titulo="✨ Resumo IA">
+            <ResumoIA
+              leadId={lead.id}
+              resumoInicial={lead.resumo_ia ?? null}
+              geradoEm={lead.resumo_gerado_em ?? null}
+            />
+          </Card>
+
           <Card titulo="Notas internas">
             <NotasLead leadId={lead.id} notasIniciais={lead.notas ?? null} />
           </Card>

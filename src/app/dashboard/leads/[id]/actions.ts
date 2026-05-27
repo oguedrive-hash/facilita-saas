@@ -10,6 +10,8 @@ import {
   getLabels,
   toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
+import { chatCompletion } from "@/lib/caio/openai";
+import { RESUMO_PROMPT } from "@/lib/caio/system-prompt";
 import type { StatusLead } from "@/lib/status-config";
 
 const AGENTE_OFF = "agente-off";
@@ -256,6 +258,81 @@ export async function deletarLead(formData: FormData): Promise<
 
   revalidatePath("/dashboard/leads");
   return { ok: true };
+}
+
+/**
+ * Gera resumo IA da conversa do lead via OpenAI.
+ * Pega as últimas 40 mensagens, manda pra OpenAI com o RESUMO_PROMPT,
+ * salva o resultado em leads.resumo_ia + leads.resumo_gerado_em.
+ */
+export async function gerarResumoIA(formData: FormData): Promise<
+  { ok: true; resumo: string } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: lead, error: leadErr } = await supabase
+    .from("leads")
+    .select("nome, telefone")
+    .eq("id", leadId)
+    .single();
+  if (leadErr || !lead) return { error: "Lead não encontrado" };
+
+  const { data: mensagens, error: msgErr } = await supabase
+    .from("mensagens")
+    .select("conteudo, direcao, tipo, created_at")
+    .eq("lead_id", leadId)
+    .order("created_at", { ascending: true })
+    .limit(40);
+  if (msgErr) return { error: msgErr.message };
+  if (!mensagens || mensagens.length === 0) {
+    return { error: "Esse lead ainda não tem mensagens pra resumir" };
+  }
+
+  // Formata conversa pra OpenAI
+  const transcript = mensagens
+    .map((m) => {
+      const quem = m.direcao === "entrada" ? lead.nome ?? "Lead" : "Caio";
+      const conteudo =
+        m.tipo !== "texto"
+          ? `[${m.tipo}${m.conteudo ? `: ${m.conteudo}` : ""}]`
+          : m.conteudo ?? "";
+      return `${quem}: ${conteudo}`;
+    })
+    .join("\n");
+
+  const result = await chatCompletion({
+    messages: [
+      { role: "system", content: RESUMO_PROMPT },
+      {
+        role: "user",
+        content: `Lead: ${lead.nome ?? "(sem nome)"} (${lead.telefone})\n\nConversa:\n${transcript}\n\nGere o resumo:`,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 400,
+  });
+
+  if ("error" in result) {
+    return { error: `Falha na OpenAI: ${result.error}` };
+  }
+
+  // Salva no banco
+  const admin = createAdminClient();
+  await admin
+    .from("leads")
+    .update({
+      resumo_ia: result.content,
+      resumo_gerado_em: new Date().toISOString(),
+    })
+    .eq("id", leadId);
+
+  revalidatePath(`/dashboard/leads/${leadId}`);
+  return { ok: true, resumo: result.content };
 }
 
 /**
