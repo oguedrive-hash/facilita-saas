@@ -1,19 +1,17 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChatwootWebhookMessageCreated } from "./types";
+import type { ChatwootWebhook } from "./types";
 
 /**
  * Identifica qual cliente (organization) é dono dessa conversa.
  *
- * Estratégia: cada organização tem 1 `chatwoot_inbox_id` único.
- * O webhook traz o `conversation.inbox_id`, que mapeia 1:1 pra organization.
- *
- * Retorna `null` se nenhuma org encontrada (não deveria acontecer em produção,
- * mas em modo sombra pode acontecer enquanto o provisionamento não tá completo).
+ * Cada organização tem 1 `chatwoot_inbox_id` único.
+ * Aceita payload de message_* (com `conversation.inbox_id`) ou de
+ * conversation_* (com `inbox_id` no body raiz).
  */
 export async function resolveOrganization(
-  msg: ChatwootWebhookMessageCreated,
+  webhook: ChatwootWebhook,
 ): Promise<{ id: string; name: string } | null> {
-  const inboxId = msg.conversation?.inbox_id;
+  const inboxId = extractInboxId(webhook);
   if (!inboxId) return null;
 
   const supabase = createAdminClient();
@@ -30,10 +28,9 @@ export async function resolveOrganization(
 
 /**
  * Fallback temporário: enquanto o provisionamento automático não está pronto,
- * a Facilita (única org real) ainda não tem `chatwoot_inbox_id` setado.
+ * a Facilita ainda não tem `chatwoot_inbox_id` setado.
  *
- * Esse helper retorna a Facilita por nome. Remover quando o provisionamento
- * configurar o inbox_id corretamente.
+ * Remover quando o provisionamento configurar o inbox_id corretamente.
  */
 export async function getFacilitaOrgFallback(): Promise<{
   id: string;
@@ -48,4 +45,21 @@ export async function getFacilitaOrgFallback(): Promise<{
 
   if (error || !data) return null;
   return data;
+}
+
+function extractInboxId(webhook: ChatwootWebhook): number | undefined {
+  // message_created/updated: conversation.inbox_id
+  if (
+    "conversation" in webhook &&
+    webhook.conversation &&
+    typeof webhook.conversation === "object" &&
+    "inbox_id" in webhook.conversation
+  ) {
+    return (webhook.conversation as { inbox_id: number }).inbox_id;
+  }
+  // conversation_created/updated: inbox_id no body raiz
+  if ("inbox_id" in webhook && typeof webhook.inbox_id === "number") {
+    return webhook.inbox_id;
+  }
+  return undefined;
 }

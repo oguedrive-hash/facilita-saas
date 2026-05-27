@@ -1,32 +1,36 @@
 import type {
   ChatwootWebhook,
-  ChatwootWebhookMessageCreated,
   ProcessingDecision,
 } from "./types";
 
 /**
- * Decide se o webhook do Chatwoot deve ser processado.
+ * Aceita eventos que contêm mensagens (diretamente ou aninhadas):
+ * - message_created, message_updated → body é a mensagem
+ * - conversation_created, conversation_updated → body tem messages[]
  *
- * Aceita: message_created (incoming e outgoing), sem ser private,
- * sem etiqueta `agente-off`.
+ * Em integrações WhatsApp/Evolution o Chatwoot 4.11 só dispara
+ * conversation_updated, então rejeitar tudo que não é message_created
+ * (como fazíamos antes) descarta praticamente todas mensagens.
  *
- * A direção (entrada/saída) é decidida pelo handler, não aqui.
+ * O dedup pelo unique constraint em chatwoot_message_id evita gravar
+ * a mesma mensagem 2x quando ela aparece em múltiplos eventos.
  */
 export function filterWebhook(
   webhook: ChatwootWebhook,
   conversationLabels: string[] = [],
 ): ProcessingDecision {
-  if (webhook.event !== "message_created") {
+  const aceitos = new Set<string>([
+    "message_created",
+    "message_updated",
+    "conversation_created",
+    "conversation_updated",
+  ]);
+
+  if (!aceitos.has(webhook.event)) {
     return {
       action: "ignore",
-      reason: `event=${webhook.event} não é message_created`,
+      reason: `event=${webhook.event} não traz mensagem`,
     };
-  }
-
-  const msg = webhook as ChatwootWebhookMessageCreated;
-
-  if (msg.private) {
-    return { action: "ignore", reason: "mensagem privada (anotação)" };
   }
 
   if (conversationLabels.includes("agente-off")) {
