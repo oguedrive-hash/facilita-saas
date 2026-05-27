@@ -5,6 +5,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { ToggleCaio } from "@/components/toggle-caio";
+import { getLabels } from "@/lib/caio/chatwoot-api";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 export default async function LeadDetalhePage({
@@ -41,6 +43,16 @@ export default async function LeadDetalhePage({
     .eq("lead_id", id)
     .order("created_at", { ascending: true });
 
+  // Lê labels da conversa no Chatwoot pra saber estado do Caio
+  // (caio respondendo = NÃO tem agente-off)
+  let caioAtivo = true;
+  if (lead.chatwoot_conversation_id) {
+    const labels = await getLabels({
+      conversationId: lead.chatwoot_conversation_id,
+    });
+    caioAtivo = !labels.includes("agente-off");
+  }
+
   const statusConfig = STATUS_CONFIG[lead.status as StatusLead];
 
   return (
@@ -66,7 +78,12 @@ export default async function LeadDetalhePage({
               {lead.telefone}
             </p>
           </div>
-          <StatusBadge status={lead.status as StatusLead} />
+          <div className="flex flex-col items-end gap-2">
+            <StatusBadge status={lead.status as StatusLead} />
+            {lead.chatwoot_conversation_id && (
+              <ToggleCaio leadId={lead.id} caioAtivoInicial={caioAtivo} />
+            )}
+          </div>
         </div>
 
         {/* Status descrição */}

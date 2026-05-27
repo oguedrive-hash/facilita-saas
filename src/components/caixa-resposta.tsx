@@ -13,6 +13,7 @@ export function CaixaResposta({
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [conteudo, setConteudo] = useState("");
+  const [desligarCaio, setDesligarCaio] = useState(true);
 
   if (!podeResponder) {
     return (
@@ -29,6 +30,7 @@ export function CaixaResposta({
     setErro(null);
     const form = new FormData(e.currentTarget);
     form.set("leadId", leadId);
+    form.set("desligar_caio", desligarCaio ? "true" : "false");
 
     startTransition(async () => {
       const result = await responderLead(form);
@@ -43,7 +45,7 @@ export function CaixaResposta({
   return (
     <form onSubmit={onSubmit} className="border-t border-cinza-claro pt-4 mt-4">
       <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
-        Responder como Caio (humano assume — Caio para de responder)
+        Responder pelo painel
       </label>
       <textarea
         name="conteudo"
@@ -55,14 +57,20 @@ export function CaixaResposta({
         className="w-full px-3 py-2 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition disabled:opacity-50"
       />
 
-      {erro && (
-        <p className="text-xs text-red-600 mt-2">{erro}</p>
-      )}
+      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
 
-      <div className="flex items-center justify-end gap-3 mt-3">
-        <span className="text-xs text-cinza-medio">
-          {pending ? "Enviando..." : "Vai aplicar etiqueta `agente-off`"}
-        </span>
+      <div className="flex items-center justify-between gap-3 mt-3">
+        <label className="inline-flex items-center gap-2 text-xs text-preto cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={desligarCaio}
+            onChange={(e) => setDesligarCaio(e.target.checked)}
+            disabled={pending}
+            className="w-4 h-4 accent-laranja"
+          />
+          Desligar Caio ao enviar (aplica <code>agente-off</code>)
+        </label>
+
         <button
           type="submit"
           disabled={pending || !conteudo.trim()}

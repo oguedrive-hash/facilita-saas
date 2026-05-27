@@ -3,23 +3,27 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { addLabel, enviarMensagem } from "@/lib/caio/chatwoot-api";
+import {
+  addLabel,
+  enviarMensagem,
+  setLabels,
+  getLabels,
+} from "@/lib/caio/chatwoot-api";
+
+const AGENTE_OFF = "agente-off";
 
 /**
  * Envia uma mensagem pelo painel respondendo um lead.
  *
- * Fluxo:
- * 1. Lê o lead no Supabase (usa cliente do usuário → respeita RLS por org)
- * 2. Envia a mensagem via Chatwoot API → vai pro WhatsApp
- * 3. Aplica etiqueta `agente-off` na conversa (Caio para de responder)
- * 4. Grava a mensagem no Supabase (admin client) pra UI atualizar imediato
- * 5. Revalida o cache da página
+ * Aceita `desligar_caio` como flag opcional no FormData. Se for "true",
+ * aplica a etiqueta `agente-off` (Caio para de responder esse lead).
  */
 export async function responderLead(formData: FormData): Promise<
   { ok: true } | { error: string }
 > {
   const leadId = formData.get("leadId");
   const conteudo = formData.get("conteudo");
+  const desligarCaio = formData.get("desligar_caio") === "true";
 
   if (typeof leadId !== "string" || !leadId) {
     return { error: "leadId ausente" };
@@ -45,7 +49,6 @@ export async function responderLead(formData: FormData): Promise<
     };
   }
 
-  // 1. Envia mensagem
   const sent = await enviarMensagem({
     conversationId: lead.chatwoot_conversation_id,
     content: conteudo.trim(),
@@ -54,18 +57,20 @@ export async function responderLead(formData: FormData): Promise<
     return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
   }
 
-  // 2. Aplica `agente-off` (Caio para de responder esse lead).
-  // Falha aqui não bloqueia o fluxo — log only.
-  const label = await addLabel({
-    conversationId: lead.chatwoot_conversation_id,
-    label: "agente-off",
-  });
-  if ("error" in label) {
-    console.warn("[painel:responder]", "falha ao aplicar agente-off:", label.error);
+  if (desligarCaio) {
+    const label = await addLabel({
+      conversationId: lead.chatwoot_conversation_id,
+      label: AGENTE_OFF,
+    });
+    if ("error" in label) {
+      console.warn(
+        "[painel:responder]",
+        "falha ao aplicar agente-off:",
+        label.error,
+      );
+    }
   }
 
-  // 3. Grava no Supabase com service role (bypassa RLS). Quando webhook do
-  // Chatwoot chegar com a mesma mensagem, o unique constraint dedup.
   const admin = createAdminClient();
   await admin.from("mensagens").insert({
     organization_id: lead.organization_id,
@@ -81,4 +86,50 @@ export async function responderLead(formData: FormData): Promise<
 
   revalidatePath(`/dashboard/leads/${leadId}`);
   return { ok: true };
+}
+
+/**
+ * Liga/desliga o Caio pra um lead específico (adiciona ou remove a
+ * etiqueta `agente-off` na conversa do Chatwoot).
+ */
+export async function toggleCaio(formData: FormData): Promise<
+  { ok: true; ativo: boolean } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+
+  const supabase = await createClient();
+  const { data: lead, error } = await supabase
+    .from("leads")
+    .select("chatwoot_conversation_id")
+    .eq("id", leadId)
+    .single();
+
+  if (error || !lead) return { error: "Lead não encontrado" };
+  if (!lead.chatwoot_conversation_id) {
+    return { error: "Lead sem conversa do Chatwoot vinculada" };
+  }
+
+  const labels = await getLabels({
+    conversationId: lead.chatwoot_conversation_id,
+  });
+  const temAgenteOff = labels.includes(AGENTE_OFF);
+
+  const novasLabels = temAgenteOff
+    ? labels.filter((l) => l !== AGENTE_OFF)
+    : [...labels, AGENTE_OFF];
+
+  const result = await setLabels({
+    conversationId: lead.chatwoot_conversation_id,
+    labels: novasLabels,
+  });
+  if ("error" in result) {
+    return { error: `Chatwoot recusou: ${result.error}` };
+  }
+
+  revalidatePath(`/dashboard/leads/${leadId}`);
+  // ativo = caio respondendo = NÃO tem agente-off
+  return { ok: true, ativo: temAgenteOff };
 }
