@@ -236,3 +236,31 @@ export async function mudarStatusLead(formData: FormData): Promise<
   revalidatePath("/dashboard/leads");
   return { ok: true };
 }
+
+/**
+ * Salva notas internas (observações livres do agente humano) no lead.
+ */
+export async function salvarNotas(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  const notas = formData.get("notas");
+
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+  if (typeof notas !== "string") {
+    return { error: "notas inválidas" };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("leads")
+    .update({ notas: notas.trim() || null })
+    .eq("id", leadId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/leads/${leadId}`);
+  return { ok: true };
+}

@@ -6,6 +6,7 @@ import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ToggleCaio } from "@/components/toggle-caio";
+import { NotasLead } from "@/components/notas-lead";
 import { getLabels } from "@/lib/caio/chatwoot-api";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
@@ -174,6 +175,10 @@ export default async function LeadDetalhePage({
 
         {/* Coluna direita — Metadata */}
         <div className="space-y-6">
+          <Card titulo="Notas internas">
+            <NotasLead leadId={lead.id} notasIniciais={lead.notas ?? null} />
+          </Card>
+
           <Card titulo="Detalhes">
             <dl className="space-y-3">
               <DataRow label="Origem" valor={lead.source} />

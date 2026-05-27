@@ -10,6 +10,7 @@ type CaioFilter = "todos" | "on" | "off";
 type FilterParams = {
   status?: StatusLead | "todos";
   caio?: CaioFilter;
+  q?: string;
 };
 
 export default async function LeadsPage({
@@ -17,8 +18,11 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<FilterParams>;
 }) {
-  const { status: statusFilter = "todos", caio: caioFilter = "todos" } =
-    await searchParams;
+  const {
+    status: statusFilter = "todos",
+    caio: caioFilter = "todos",
+    q: searchQuery = "",
+  } = await searchParams;
   const supabase = await createClient();
 
   let query = supabase
@@ -34,6 +38,10 @@ export default async function LeadsPage({
   }
   if (caioFilter === "on") query = query.eq("caio_ativo", true);
   if (caioFilter === "off") query = query.eq("caio_ativo", false);
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().replace(/[%_]/g, ""); // escapa wildcards SQL
+    query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
+  }
 
   const { data: leads, error } = await query;
 
@@ -55,12 +63,15 @@ export default async function LeadsPage({
   function buildHref(opts: {
     status?: StatusLead | "todos";
     caio?: CaioFilter;
+    q?: string;
   }): string {
     const params = new URLSearchParams();
     const s = opts.status ?? statusFilter;
     const c = opts.caio ?? caioFilter;
+    const qq = opts.q ?? searchQuery;
     if (s !== "todos") params.set("status", s);
     if (c !== "todos") params.set("caio", c);
+    if (qq) params.set("q", qq);
     const qs = params.toString();
     return qs ? `/dashboard/leads?${qs}` : "/dashboard/leads";
   }
@@ -71,6 +82,40 @@ export default async function LeadsPage({
         titulo="Leads"
         descricao="Todos os leads capturados pelo Caio"
       />
+
+      {/* Busca */}
+      <form method="get" action="/dashboard/leads" className="mb-4">
+        {/* Preserva os filtros atuais como hidden inputs */}
+        {statusFilter !== "todos" && (
+          <input type="hidden" name="status" value={statusFilter} />
+        )}
+        {caioFilter !== "todos" && (
+          <input type="hidden" name="caio" value={caioFilter} />
+        )}
+        <div className="flex items-center gap-2 max-w-md">
+          <input
+            type="search"
+            name="q"
+            defaultValue={searchQuery}
+            placeholder="Buscar por nome ou telefone..."
+            className="flex-1 px-3 py-2 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-preto text-white text-sm font-heading font-semibold rounded-lg hover:opacity-90 transition"
+          >
+            Buscar
+          </button>
+          {searchQuery && (
+            <Link
+              href={buildHref({ q: "" })}
+              className="px-3 py-2 text-sm text-cinza-medio hover:text-preto transition"
+            >
+              Limpar
+            </Link>
+          )}
+        </div>
+      </form>
 
       {/* Filtros de status */}
       <div className="flex flex-wrap gap-2 mb-3">
