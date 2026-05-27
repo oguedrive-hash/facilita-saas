@@ -238,6 +238,27 @@ export async function mudarStatusLead(formData: FormData): Promise<
 }
 
 /**
+ * Deleta um lead permanentemente.
+ * Cascade remove mensagens e agendamentos vinculados.
+ * NÃO mexe no Chatwoot — se o lead mandar nova mensagem, vai ser recriado.
+ */
+export async function deletarLead(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("leads").delete().eq("id", leadId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/leads");
+  return { ok: true };
+}
+
+/**
  * Salva notas internas (observações livres do agente humano) no lead.
  */
 export async function salvarNotas(formData: FormData): Promise<

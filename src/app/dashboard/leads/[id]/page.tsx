@@ -7,6 +7,7 @@ import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ToggleCaio } from "@/components/toggle-caio";
 import { NotasLead } from "@/components/notas-lead";
+import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
 import { getLabels } from "@/lib/caio/chatwoot-api";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
@@ -210,6 +211,17 @@ export default async function LeadDetalhePage({
               )}
             </dl>
           </Card>
+
+          {/* Zona de perigo */}
+          <div className="bg-white rounded-2xl border border-red-200 p-4">
+            <p className="text-xs font-heading font-semibold text-red-700 uppercase tracking-wider mb-2">
+              Zona de perigo
+            </p>
+            <BotaoDeletarLead
+              leadId={lead.id}
+              nomeLead={lead.nome ?? lead.telefone}
+            />
+          </div>
         </div>
       </div>
     </div>

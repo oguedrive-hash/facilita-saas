@@ -183,6 +183,14 @@ async function processarMensagem(
       console.warn("[caio:msg]", "incoming sem phone_number do sender");
       return false;
     }
+    if (!phoneValido(phone)) {
+      console.warn(
+        "[caio:msg]",
+        "phone invalido (provavelmente teste do Evolution):",
+        phone,
+      );
+      return false;
+    }
 
     const { data: existing } = await supabase
       .from("leads")
@@ -283,6 +291,14 @@ async function gravarMensagem(
   }
 
   return true;
+}
+
+/**
+ * Aceita phones no formato E.164 com pelo menos 10 dígitos depois do +
+ * (ex: +5511999998888). Bloqueia placeholders tipo "+123456" do Evolution.
+ */
+function phoneValido(phone: string): boolean {
+  return /^\+\d{10,15}$/.test(phone);
 }
 
 function inferirTipo(
