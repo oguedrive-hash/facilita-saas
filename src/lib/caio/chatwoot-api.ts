@@ -9,13 +9,16 @@
  */
 
 function config() {
-  const url = process.env.CHATWOOT_URL;
+  const rawUrl = process.env.CHATWOOT_URL;
   const accountId = process.env.CHATWOOT_ACCOUNT_ID;
   const token = process.env.CHATWOOT_API_TOKEN;
 
-  if (!url) throw new Error("CHATWOOT_URL não está definida");
+  if (!rawUrl) throw new Error("CHATWOOT_URL não está definida");
   if (!accountId) throw new Error("CHATWOOT_ACCOUNT_ID não está definida");
   if (!token) throw new Error("CHATWOOT_API_TOKEN não está definida");
+
+  // Remove barra final pra evitar // no path (causa 404)
+  const url = rawUrl.replace(/\/+$/, "");
 
   return {
     url,
