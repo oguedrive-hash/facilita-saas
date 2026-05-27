@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filterWebhook } from "@/lib/caio/filter";
 import {
@@ -10,22 +10,11 @@ import type {
   ChatwootWebhookMessageCreated,
 } from "@/lib/caio/types";
 
-/**
- * Webhook handler do Chatwoot.
- *
- * MODO SOMBRA (fase atual):
- * - Recebe webhook
- * - Identifica organização
- * - Aplica filtros (idêntico ao n8n)
- * - Grava lead no Supabase (multi-tenant)
- * - NÃO RESPONDE ao lead (n8n continua sendo quem responde)
- *
- * Pra ativar resposta: implementar process/route.ts (próxima fase).
- */
+// Chatwoot 4.11 tem timeout fixo de 5s pra webhook delivery. Pra evitar
+// timeout em cold start da função (que descarta o evento), respondemos
+// 200 imediato e processamos o lead em background com `after()`.
 
 export async function POST(request: NextRequest) {
-  const startedAt = Date.now();
-
   let webhook: ChatwootWebhook;
   try {
     webhook = (await request.json()) as ChatwootWebhook;
@@ -33,13 +22,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  // Log básico — todo evento que chega é registrado
   console.log("[caio:webhook]", {
     event: webhook.event,
     ts: new Date().toISOString(),
   });
 
-  // Filtros iniciais (sem precisar consultar banco)
   const decision = filterWebhook(webhook, []);
   if (decision.action === "ignore") {
     console.log("[caio:filter]", "ignore:", decision.reason);
@@ -52,9 +39,14 @@ export async function POST(request: NextRequest) {
 
   const msg = webhook as ChatwootWebhookMessageCreated;
 
-  // Identifica organização
-  // TODO: usar resolveOrganization quando chatwoot_inbox_id estiver setado.
-  // Por enquanto, fallback pra Facilita (única org real).
+  after(() => processLead(msg));
+
+  return NextResponse.json({ received: true, decision: "queued" });
+}
+
+async function processLead(msg: ChatwootWebhookMessageCreated) {
+  const startedAt = Date.now();
+
   let org = await resolveOrganization(msg);
   if (!org) {
     org = await getFacilitaOrgFallback();
@@ -66,32 +58,21 @@ export async function POST(request: NextRequest) {
       "Nenhuma organização identificada para inbox_id=",
       msg.conversation?.inbox_id,
     );
-    return NextResponse.json({
-      received: true,
-      decision: "ignore",
-      reason: "organização não identificada",
-    });
+    return;
   }
 
   console.log("[caio:tenant]", "org:", org.name, org.id);
-
-  // Upsert do lead no Supabase
-  const supabase = createAdminClient();
 
   const phone = msg.sender?.phone_number;
   const name = msg.sender?.name;
 
   if (!phone) {
     console.warn("[caio:lead]", "sem phone_number do sender");
-    return NextResponse.json({
-      received: true,
-      decision: "ignore",
-      reason: "sender sem phone_number",
-    });
+    return;
   }
 
-  // Estratégia: tenta UPDATE primeiro. Se 0 linhas, faz INSERT.
-  // (Supabase não tem UPSERT direto via SDK, mas o conflict pode ser tratado.)
+  const supabase = createAdminClient();
+
   const { data: existing } = await supabase
     .from("leads")
     .select("id, status")
@@ -99,10 +80,7 @@ export async function POST(request: NextRequest) {
     .eq("telefone", phone)
     .maybeSingle();
 
-  let leadId: string;
-
   if (existing) {
-    // Lead já existe — só atualiza updated_at e mantém status (a não ser que estava perdido)
     const newStatus =
       existing.status === "perdido" || existing.status === "novo_lead"
         ? "em_conversa"
@@ -112,50 +90,42 @@ export async function POST(request: NextRequest) {
       .from("leads")
       .update({
         status: newStatus,
-        nome: name, // sempre atualiza nome (caso lead tenha mudado)
+        nome: name,
         chatwoot_conversation_id: msg.conversation?.id,
       })
       .eq("id", existing.id);
-    leadId = existing.id;
-    console.log("[caio:lead]", "atualizado:", leadId);
-  } else {
-    // Lead novo
-    const { data: novo, error } = await supabase
-      .from("leads")
-      .insert({
-        organization_id: org.id,
-        telefone: phone,
-        nome: name,
-        status: "em_conversa",
-        source: "whatsapp",
-        chatwoot_conversation_id: msg.conversation?.id,
-      })
-      .select("id")
-      .single();
-
-    if (error || !novo) {
-      console.error("[caio:lead]", "erro ao inserir:", error);
-      return NextResponse.json({
-        received: true,
-        decision: "error",
-        reason: error?.message,
-      });
-    }
-    leadId = novo.id;
-    console.log("[caio:lead]", "criado:", leadId);
+    console.log(
+      "[caio:lead]",
+      "atualizado:",
+      existing.id,
+      `(${Date.now() - startedAt}ms)`,
+    );
+    return;
   }
 
-  const durationMs = Date.now() - startedAt;
-  console.log("[caio:webhook]", "done in", durationMs, "ms");
+  const { data: novo, error } = await supabase
+    .from("leads")
+    .insert({
+      organization_id: org.id,
+      telefone: phone,
+      nome: name,
+      status: "em_conversa",
+      source: "whatsapp",
+      chatwoot_conversation_id: msg.conversation?.id,
+    })
+    .select("id")
+    .single();
 
-  return NextResponse.json({
-    received: true,
-    decision: "shadow_log",
-    lead_id: leadId,
-    org_id: org.id,
-    org_name: org.name,
-    duration_ms: durationMs,
-  });
+  if (error || !novo) {
+    console.error("[caio:lead]", "erro ao inserir:", error);
+    return;
+  }
+  console.log(
+    "[caio:lead]",
+    "criado:",
+    novo.id,
+    `(${Date.now() - startedAt}ms)`,
+  );
 }
 
 export async function GET() {
