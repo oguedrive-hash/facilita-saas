@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================
+   FACILITA PLUS — Tema visual oficial
+   Baseado no Manual da Marca (versão 01)
+   ============================================ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  /* Cores oficiais da marca */
+  --color-laranja: #e8501c;
+  --color-laranja-claro: #f47843;
+  --color-laranja-escuro: #c0410f;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-preto: #0a0a0a;
+  --color-chumbo: #1a1a1a;
+  --color-cinza-medio: #6f6f6f;
+  --color-cinza-claro: #e8e3dc;
+  --color-offwhite: #f5f1eb;
+  --color-branco: #ffffff;
+
+  /* Tipografia */
+  --font-heading: var(--font-work-sans);
+  --font-body: var(--font-manrope);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-offwhite);
+  color: var(--color-preto);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+
+/* Hierarquia tipográfica oficial */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-work-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-weight: 700; /* Bold */
+}
+
+h2 {
+  font-weight: 600; /* Semibold */
+}
+
+/* CTAs e botões */
+button, .cta {
+  font-family: var(--font-work-sans), system-ui, sans-serif;
+  font-weight: 600; /* Semibold */
 }
