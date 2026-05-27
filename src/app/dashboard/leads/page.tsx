@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusSelector } from "@/components/status-selector";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
@@ -114,7 +114,10 @@ export default async function LeadsPage({
                   </Td>
                   <Td>
                     <div className="flex flex-col items-start gap-1.5">
-                      <StatusBadge status={lead.status as StatusLead} />
+                      <StatusSelector
+                        leadId={lead.id}
+                        statusAtual={lead.status as StatusLead}
+                      />
                       <CaioBadge ativo={lead.caio_ativo ?? true} />
                     </div>
                   </Td>
