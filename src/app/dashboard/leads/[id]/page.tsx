@@ -43,14 +43,24 @@ export default async function LeadDetalhePage({
     .eq("lead_id", id)
     .order("created_at", { ascending: true });
 
-  // Lê labels da conversa no Chatwoot pra saber estado do Caio
-  // (caio respondendo = NÃO tem agente-off)
-  let caioAtivo = true;
+  // Estado do Caio: usa o que tá no banco (atualizado pelo webhook).
+  // Como fallback (banco desatualizado / lead antigo), bate na Chatwoot
+  // API. Se essa chamada falhar (rede, Chatwoot offline), mantém o
+  // valor do banco.
+  let caioAtivo = lead.caio_ativo ?? true;
   if (lead.chatwoot_conversation_id) {
-    const labels = await getLabels({
-      conversationId: lead.chatwoot_conversation_id,
-    });
-    caioAtivo = !labels.includes("agente-off");
+    try {
+      const labels = await getLabels({
+        conversationId: lead.chatwoot_conversation_id,
+      });
+      caioAtivo = !labels.includes("agente-off");
+    } catch (err) {
+      console.warn(
+        "[lead:page]",
+        "falha ao ler labels do Chatwoot, usando banco:",
+        err,
+      );
+    }
   }
 
   const statusConfig = STATUS_CONFIG[lead.status as StatusLead];

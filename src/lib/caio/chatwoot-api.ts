@@ -3,7 +3,9 @@
  *
  * Server-side only. Usa o token da env var CHATWOOT_API_TOKEN.
  *
- * Docs: https://www.chatwoot.com/developers/api/
+ * Todas as funções fazem try/catch internamente e retornam ou
+ * `{ error: string }` ou um default safe — assim falhas de rede
+ * (DNS, timeout, Chatwoot offline) não derrubam páginas inteiras.
  */
 
 function config() {
@@ -23,18 +25,35 @@ function config() {
   };
 }
 
+async function safeFetch(
+  url: string,
+  init?: RequestInit,
+): Promise<Response | { error: string }> {
+  try {
+    const res = await fetch(url, init);
+    return res;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { error: `Falha de rede: ${msg}` };
+  }
+}
+
 /**
  * Envia uma mensagem outgoing numa conversa.
- * Chatwoot dispara webhook conversation_updated; nosso handler grava no
- * Supabase via dedup pelo chatwoot_message_id. Mas pra dar feedback
- * imediato na UI a gente também grava aqui mesmo.
  */
 export async function enviarMensagem(opts: {
   conversationId: number;
   content: string;
 }): Promise<{ id: number; content: string } | { error: string }> {
-  const { baseUrl, token } = config();
-  const res = await fetch(
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  const result = await safeFetch(
     `${baseUrl}/conversations/${opts.conversationId}/messages`,
     {
       method: "POST",
@@ -49,28 +68,37 @@ export async function enviarMensagem(opts: {
       }),
     },
   );
-
-  if (!res.ok) {
-    const text = await res.text();
+  if ("error" in result) return result;
+  if (!result.ok) {
+    const text = await result.text();
     return {
-      error: `Chatwoot respondeu ${res.status}: ${text.slice(0, 300)}`,
+      error: `Chatwoot respondeu ${result.status}: ${text.slice(0, 300)}`,
     };
   }
-
-  const data = (await res.json()) as { id: number; content: string };
-  return { id: data.id, content: data.content };
+  try {
+    const data = (await result.json()) as { id: number; content: string };
+    return { id: data.id, content: data.content };
+  } catch {
+    return { error: "Resposta do Chatwoot não é JSON válido" };
+  }
 }
 
 /**
- * Aplica (e/ou substitui) etiquetas numa conversa.
- * O Chatwoot SUBSTITUI a lista, então sempre passa a lista completa.
+ * Aplica (substitui) etiquetas numa conversa.
  */
 export async function setLabels(opts: {
   conversationId: number;
   labels: string[];
 }): Promise<{ ok: true } | { error: string }> {
-  const { baseUrl, token } = config();
-  const res = await fetch(
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  const result = await safeFetch(
     `${baseUrl}/conversations/${opts.conversationId}/labels`,
     {
       method: "POST",
@@ -81,34 +109,42 @@ export async function setLabels(opts: {
       body: JSON.stringify({ labels: opts.labels }),
     },
   );
-
-  if (!res.ok) {
-    const text = await res.text();
+  if ("error" in result) return result;
+  if (!result.ok) {
+    const text = await result.text();
     return {
-      error: `Chatwoot respondeu ${res.status}: ${text.slice(0, 300)}`,
+      error: `Chatwoot respondeu ${result.status}: ${text.slice(0, 300)}`,
     };
   }
-
   return { ok: true };
 }
 
 /**
- * Busca as labels atuais de uma conversa.
+ * Busca as labels atuais de uma conversa. Em caso de falha retorna [].
  */
 export async function getLabels(opts: {
   conversationId: number;
 }): Promise<string[]> {
-  const { baseUrl, token } = config();
-  const res = await fetch(
-    `${baseUrl}/conversations/${opts.conversationId}/labels`,
-    {
-      headers: { api_access_token: token },
-    },
-  );
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch {
+    return [];
+  }
 
-  if (!res.ok) return [];
-  const data = (await res.json()) as { payload?: string[] };
-  return data.payload ?? [];
+  const result = await safeFetch(
+    `${baseUrl}/conversations/${opts.conversationId}/labels`,
+    { headers: { api_access_token: token } },
+  );
+  if ("error" in result) return [];
+  if (!result.ok) return [];
+  try {
+    const data = (await result.json()) as { payload?: string[] };
+    return data.payload ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -127,15 +163,21 @@ export async function addLabel(opts: {
 }
 
 /**
- * Muda status de uma conversa.
- * "resolved" fecha a conversa, "open" reabre.
+ * Muda status de uma conversa (resolved, open, pending).
  */
 export async function toggleConversationStatus(opts: {
   conversationId: number;
   status: "open" | "resolved" | "pending";
 }): Promise<{ ok: true } | { error: string }> {
-  const { baseUrl, token } = config();
-  const res = await fetch(
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  const result = await safeFetch(
     `${baseUrl}/conversations/${opts.conversationId}/toggle_status`,
     {
       method: "POST",
@@ -146,11 +188,11 @@ export async function toggleConversationStatus(opts: {
       body: JSON.stringify({ status: opts.status }),
     },
   );
-
-  if (!res.ok) {
-    const text = await res.text();
+  if ("error" in result) return result;
+  if (!result.ok) {
+    const text = await result.text();
     return {
-      error: `Chatwoot respondeu ${res.status}: ${text.slice(0, 300)}`,
+      error: `Chatwoot respondeu ${result.status}: ${text.slice(0, 300)}`,
     };
   }
   return { ok: true };
