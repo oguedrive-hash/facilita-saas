@@ -8,9 +8,15 @@ import {
   enviarMensagem,
   setLabels,
   getLabels,
+  toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
+import type { StatusLead } from "@/lib/status-config";
 
 const AGENTE_OFF = "agente-off";
+
+// Status que sinalizam que o lead "saiu" do funil — ao chegar nesses
+// status, desligamos o Caio e resolvemos a conversa no Chatwoot.
+const STATUS_TERMINAIS: StatusLead[] = ["fechou", "perdido"];
 
 /**
  * Envia uma mensagem pelo painel respondendo um lead.
@@ -147,4 +153,86 @@ export async function toggleCaio(formData: FormData): Promise<
   revalidatePath("/dashboard/leads");
   // ativo = caio respondendo = NÃO tem agente-off (depois da troca)
   return { ok: true, ativo: temAgenteOff };
+}
+
+/**
+ * Muda o status do lead manualmente pelo painel.
+ *
+ * Se o novo status for terminal (`fechou` ou `perdido`):
+ *   - Aplica etiqueta `agente-off` (Caio para)
+ *   - Resolve a conversa no Chatwoot
+ *   - Atualiza `caio_ativo = false` no Supabase
+ *
+ * Se sair de um status terminal pra um ativo (ex: voltar pra `em_conversa`):
+ *   - Reabre a conversa no Chatwoot
+ *   (a etiqueta agente-off NÃO é removida automaticamente — usa o toggle pra isso)
+ */
+export async function mudarStatusLead(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  const novoStatus = formData.get("status");
+  const razao = formData.get("razao");
+
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+  if (typeof novoStatus !== "string" || !novoStatus) {
+    return { error: "status ausente" };
+  }
+
+  const supabase = await createClient();
+  const { data: lead, error } = await supabase
+    .from("leads")
+    .select("id, status, chatwoot_conversation_id")
+    .eq("id", leadId)
+    .single();
+
+  if (error || !lead) return { error: "Lead não encontrado" };
+
+  const statusAntigo = lead.status as StatusLead;
+  const statusNovo = novoStatus as StatusLead;
+  const ehTerminal = STATUS_TERMINAIS.includes(statusNovo);
+  const eraTerminal = STATUS_TERMINAIS.includes(statusAntigo);
+
+  // Atualiza status no Supabase
+  const admin = createAdminClient();
+  const update: Record<string, unknown> = { status: statusNovo };
+  if (typeof razao === "string" && razao.trim()) {
+    update.razao = razao.trim();
+  }
+  if (ehTerminal) update.caio_ativo = false;
+
+  const { error: updateErr } = await admin
+    .from("leads")
+    .update(update)
+    .eq("id", leadId);
+
+  if (updateErr) {
+    return { error: `Erro ao atualizar: ${updateErr.message}` };
+  }
+
+  // Sincroniza Chatwoot — só se tiver conversa vinculada
+  if (lead.chatwoot_conversation_id) {
+    if (ehTerminal) {
+      await addLabel({
+        conversationId: lead.chatwoot_conversation_id,
+        label: AGENTE_OFF,
+      });
+      await toggleConversationStatus({
+        conversationId: lead.chatwoot_conversation_id,
+        status: "resolved",
+      });
+    } else if (eraTerminal) {
+      // saiu de terminal → reabre a conversa
+      await toggleConversationStatus({
+        conversationId: lead.chatwoot_conversation_id,
+        status: "open",
+      });
+    }
+  }
+
+  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath("/dashboard/leads");
+  return { ok: true };
 }

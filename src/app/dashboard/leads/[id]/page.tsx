@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusSelector } from "@/components/status-selector";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -79,7 +79,10 @@ export default async function LeadDetalhePage({
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <StatusBadge status={lead.status as StatusLead} />
+            <StatusSelector
+              leadId={lead.id}
+              statusAtual={lead.status as StatusLead}
+            />
             {lead.chatwoot_conversation_id && (
               <ToggleCaio leadId={lead.id} caioAtivoInicial={caioAtivo} />
             )}

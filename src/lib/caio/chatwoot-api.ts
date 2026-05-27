@@ -125,3 +125,33 @@ export async function addLabel(opts: {
     labels: [...current, opts.label],
   });
 }
+
+/**
+ * Muda status de uma conversa.
+ * "resolved" fecha a conversa, "open" reabre.
+ */
+export async function toggleConversationStatus(opts: {
+  conversationId: number;
+  status: "open" | "resolved" | "pending";
+}): Promise<{ ok: true } | { error: string }> {
+  const { baseUrl, token } = config();
+  const res = await fetch(
+    `${baseUrl}/conversations/${opts.conversationId}/toggle_status`,
+    {
+      method: "POST",
+      headers: {
+        api_access_token: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: opts.status }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    return {
+      error: `Chatwoot respondeu ${res.status}: ${text.slice(0, 300)}`,
+    };
+  }
+  return { ok: true };
+}
