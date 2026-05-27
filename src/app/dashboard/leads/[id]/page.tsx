@@ -177,7 +177,7 @@ export default async function LeadDetalhePage({
 
         {/* Coluna direita — Metadata */}
         <div className="space-y-6">
-          <Card titulo="✨ Resumo IA">
+          <Card titulo="Resumo IA">
             <ResumoIA
               leadId={lead.id}
               resumoInicial={lead.resumo_ia ?? null}

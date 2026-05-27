@@ -37,7 +37,7 @@ export function ResumoIA({
       {resumo ? (
         <div className="space-y-3">
           <div className="text-sm text-preto whitespace-pre-wrap leading-relaxed">
-            {resumo}
+            <MarkdownBasico texto={resumo} />
           </div>
           <div className="flex items-center justify-between text-[10px] text-cinza-medio">
             <span>
@@ -65,7 +65,7 @@ export function ResumoIA({
             disabled={pending}
             className="w-full px-3 py-2 bg-preto text-white text-xs font-heading font-semibold rounded-lg hover:opacity-90 transition disabled:opacity-50"
           >
-            {pending ? "Gerando..." : "✨ Gerar resumo IA"}
+            {pending ? "Gerando..." : "Gerar resumo IA"}
           </button>
         </div>
       )}
@@ -74,6 +74,29 @@ export function ResumoIA({
         <p className="text-xs text-red-600 mt-2">{erro}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Renderiza um texto simples com suporte a **bold** (markdown básico).
+ * Quebras de linha são preservadas via whitespace-pre-wrap no pai.
+ */
+function MarkdownBasico({ texto }: { texto: string }) {
+  // Quebra em segmentos de **bold** e texto normal
+  const partes = texto.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {partes.map((parte, i) => {
+        if (parte.startsWith("**") && parte.endsWith("**")) {
+          return (
+            <strong key={i} className="font-heading font-semibold">
+              {parte.slice(2, -2)}
+            </strong>
+          );
+        }
+        return <span key={i}>{parte}</span>;
+      })}
+    </>
   );
 }
 
