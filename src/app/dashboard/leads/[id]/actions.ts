@@ -354,6 +354,101 @@ export async function gerarSugestaoResposta(formData: FormData): Promise<
 }
 
 /**
+ * Aprova uma sugestão shadow do Caio IA: envia pelo Chatwoot, aplica
+ * agente-off (Caio do n8n para de responder) e converte a mensagem
+ * shadow em mensagem real (saida) atualizando o chatwoot_message_id.
+ */
+export async function aprovarShadow(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const mensagemId = formData.get("mensagemId");
+  if (typeof mensagemId !== "string" || !mensagemId) {
+    return { error: "mensagemId ausente" };
+  }
+
+  const supabase = await createClient();
+  const { data: msg, error } = await supabase
+    .from("mensagens")
+    .select(
+      "id, lead_id, organization_id, conteudo, shadow, chatwoot_conversation_id",
+    )
+    .eq("id", mensagemId)
+    .single();
+  if (error || !msg) return { error: "Mensagem shadow não encontrada" };
+  if (!msg.shadow) return { error: "Mensagem não é shadow" };
+  if (!msg.conteudo?.trim()) return { error: "Shadow sem conteúdo" };
+  if (!msg.chatwoot_conversation_id) {
+    return { error: "Sem conversa do Chatwoot vinculada" };
+  }
+
+  // 1. Envia via Chatwoot API
+  const sent = await enviarMensagem({
+    conversationId: msg.chatwoot_conversation_id,
+    content: msg.conteudo,
+  });
+  if ("error" in sent) {
+    return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
+  }
+
+  // 2. Aplica agente-off (Caio do n8n para de responder)
+  const label = await addLabel({
+    conversationId: msg.chatwoot_conversation_id,
+    label: AGENTE_OFF,
+  });
+  if ("error" in label) {
+    console.warn("[painel:aprovar-shadow]", "agente-off:", label.error);
+  }
+
+  // 3. Converte shadow em mensagem real
+  const admin = createAdminClient();
+  await admin
+    .from("mensagens")
+    .update({
+      shadow: false,
+      chatwoot_message_id: sent.id,
+      remetente_nome: "Você (aprovou sugestão Caio IA)",
+    })
+    .eq("id", mensagemId);
+
+  // 4. Atualiza caio_ativo no lead
+  await admin
+    .from("leads")
+    .update({ caio_ativo: false })
+    .eq("id", msg.lead_id);
+
+  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  revalidatePath("/dashboard/leads");
+  return { ok: true };
+}
+
+/**
+ * Descarta uma sugestão shadow do Caio IA — deleta a mensagem do banco.
+ */
+export async function descartarShadow(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const mensagemId = formData.get("mensagemId");
+  if (typeof mensagemId !== "string" || !mensagemId) {
+    return { error: "mensagemId ausente" };
+  }
+
+  const supabase = await createClient();
+  const { data: msg } = await supabase
+    .from("mensagens")
+    .select("id, lead_id, shadow")
+    .eq("id", mensagemId)
+    .single();
+  if (!msg) return { error: "Mensagem não encontrada" };
+  if (!msg.shadow) return { error: "Mensagem não é shadow" };
+
+  const admin = createAdminClient();
+  await admin.from("mensagens").delete().eq("id", mensagemId);
+
+  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  return { ok: true };
+}
+
+/**
  * Força transcrição (ou re-transcrição) de uma mensagem de áudio.
  * Útil pra áudios antigos que não foram transcritos por falta de env
  * var na hora do webhook, ou pra regerar uma transcrição ruim.

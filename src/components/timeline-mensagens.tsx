@@ -1,4 +1,5 @@
 import { BotaoRetranscrever } from "./botao-retranscrever";
+import { AcoesShadow } from "./acoes-shadow";
 
 type Mensagem = {
   id: string;
@@ -66,6 +67,7 @@ function Balao({ mensagem }: { mensagem: Mensagem }) {
             month: "2-digit",
           })}
         </p>
+        {isShadow && <AcoesShadow mensagemId={mensagem.id} />}
       </div>
     </div>
   );
