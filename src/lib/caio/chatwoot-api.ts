@@ -9,16 +9,14 @@
  */
 
 function config() {
-  const rawUrl = process.env.CHATWOOT_URL;
-  const accountId = process.env.CHATWOOT_ACCOUNT_ID;
-  const token = process.env.CHATWOOT_API_TOKEN;
+  // trim pra remover espaços que podem entrar por copy/paste no Vercel UI
+  const url = (process.env.CHATWOOT_URL ?? "").trim().replace(/\/+$/, "");
+  const accountId = (process.env.CHATWOOT_ACCOUNT_ID ?? "").trim();
+  const token = (process.env.CHATWOOT_API_TOKEN ?? "").trim();
 
-  if (!rawUrl) throw new Error("CHATWOOT_URL não está definida");
+  if (!url) throw new Error("CHATWOOT_URL não está definida");
   if (!accountId) throw new Error("CHATWOOT_ACCOUNT_ID não está definida");
   if (!token) throw new Error("CHATWOOT_API_TOKEN não está definida");
-
-  // Remove barra final pra evitar // no path (causa 404)
-  const url = rawUrl.replace(/\/+$/, "");
 
   return {
     url,
