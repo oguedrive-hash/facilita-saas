@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/status-badge";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
+import { CaixaResposta } from "@/components/caixa-resposta";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
@@ -89,9 +90,13 @@ export default async function LeadDetalhePage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Coluna esquerda — Info */}
         <div className="md:col-span-2 space-y-6">
-          {/* Histórico de mensagens */}
+          {/* Histórico de mensagens + caixa de resposta */}
           <Card titulo="Conversa">
             <TimelineMensagens mensagens={mensagens ?? []} />
+            <CaixaResposta
+              leadId={lead.id}
+              podeResponder={Boolean(lead.chatwoot_conversation_id)}
+            />
           </Card>
 
           {/* Agendamentos */}
