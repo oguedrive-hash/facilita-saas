@@ -23,8 +23,10 @@ export async function gerarAudio(opts: {
   if (!voiceId) return { error: "voice_id não definida" };
 
   try {
+    // output_format=mp3_44100_64 reduz arquivo ~50% sem perda perceptível
+    // de qualidade — Chatwoot/Evolution processam mais rápido.
     const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`,
       {
         method: "POST",
         headers: {

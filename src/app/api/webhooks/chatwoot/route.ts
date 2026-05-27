@@ -261,7 +261,22 @@ async function responderLeadAuto(
       mimeType: tts.mimeType,
     });
     if ("error" in sent) {
-      console.error("[caio:auto]", "envio áudio falhou:", sent.error);
+      console.error(
+        "[caio:auto]",
+        "envio áudio falhou, fallback texto:",
+        sent.error,
+      );
+      // Fallback: se Chatwoot recusou áudio (timeout, formato, etc),
+      // envia texto pra pelo menos o lead receber alguma resposta.
+      const fallback = await enviarMensagem({
+        conversationId: lead.chatwoot_conversation_id,
+        content: texto,
+      });
+      if ("error" in fallback) {
+        console.error("[caio:auto]", "fallback texto falhou:", fallback.error);
+      } else {
+        console.log("[caio:auto]", "respondeu texto (fallback) pra lead", leadId);
+      }
       return;
     }
     console.log("[caio:auto]", "respondeu áudio pra lead", leadId);

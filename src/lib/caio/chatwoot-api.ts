@@ -114,15 +114,22 @@ export async function enviarMensagemComAudio(opts: {
   });
   form.append("attachments[]", file);
 
+  // Timeout de 30s — se Evolution/WhatsApp estiver lento, melhor falhar
+  // logo e cair pro fallback texto do que travar 60s+ esperando.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
     const res = await fetch(
       `${baseUrl}/conversations/${opts.conversationId}/messages`,
       {
         method: "POST",
-        headers: { api_access_token: token }, // sem Content-Type — fetch seta com boundary
+        headers: { api_access_token: token },
         body: form,
+        signal: controller.signal,
       },
     );
+    clearTimeout(timeoutId);
     if (!res.ok) {
       const text = await res.text();
       return {
@@ -132,6 +139,10 @@ export async function enviarMensagemComAudio(opts: {
     const data = (await res.json()) as { id: number };
     return { id: data.id };
   } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      return { error: "Chatwoot timeout (30s) — Evolution provavelmente está lento ou offline" };
+    }
     return {
       error: err instanceof Error ? err.message : "fetch failed",
     };
