@@ -73,13 +73,17 @@ function ConteudoMensagem({ mensagem }: { mensagem: Mensagem }) {
   if (mensagem.tipo === "audio") {
     return (
       <div>
-        <p className="text-xs font-heading font-semibold mb-1">🎙️ Áudio</p>
+        <p className="text-xs font-heading font-semibold mb-1">Áudio</p>
         {mensagem.attachment_url && (
           <audio controls src={mensagem.attachment_url} className="max-w-full" />
         )}
-        {mensagem.conteudo && (
+        {mensagem.conteudo ? (
           <p className="text-sm mt-1 italic opacity-80">
             &ldquo;{mensagem.conteudo}&rdquo;
+          </p>
+        ) : (
+          <p className="text-xs mt-1 italic opacity-60">
+            Transcrevendo...
           </p>
         )}
       </div>

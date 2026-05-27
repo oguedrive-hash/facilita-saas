@@ -22,6 +22,63 @@ export type ChatResult =
   | { error: string };
 
 /**
+ * Transcreve áudio via Whisper.
+ * Baixa o arquivo da URL, envia pra /v1/audio/transcriptions e devolve
+ * o texto. Modelo configurável via OPENAI_WHISPER_MODEL (default whisper-1).
+ */
+export async function transcreverAudio(opts: {
+  audioUrl: string;
+}): Promise<{ texto: string } | { error: string }> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return { error: "OPENAI_API_KEY não definida" };
+  const model = process.env.OPENAI_WHISPER_MODEL ?? "whisper-1";
+
+  try {
+    // Baixa o áudio
+    const audioRes = await fetch(opts.audioUrl);
+    if (!audioRes.ok) {
+      return {
+        error: `Falha ao baixar áudio (${audioRes.status})`,
+      };
+    }
+    const blob = await audioRes.blob();
+
+    // Whisper precisa de filename — extrai da URL ou usa fallback
+    const urlPath = new URL(opts.audioUrl).pathname;
+    const filename = urlPath.split("/").pop() || "audio.ogg";
+    const file = new File([blob], filename, {
+      type: blob.type || "audio/ogg",
+    });
+
+    const form = new FormData();
+    form.set("file", file);
+    form.set("model", model);
+    form.set("language", "pt"); // força português (lead BR)
+
+    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+      body: form,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        error: `Whisper ${res.status}: ${text.slice(0, 300)}`,
+      };
+    }
+
+    const data = (await res.json()) as { text?: string };
+    if (!data.text) return { error: "Whisper devolveu resposta vazia" };
+    return { texto: data.text.trim() };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "fetch failed",
+    };
+  }
+}
+
+/**
  * Chama o endpoint /v1/chat/completions da OpenAI.
  * Retorna conteúdo da primeira choice ou { error }.
  */

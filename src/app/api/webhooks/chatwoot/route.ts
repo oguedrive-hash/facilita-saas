@@ -6,6 +6,7 @@ import {
   getFacilitaOrgFallback,
 } from "@/lib/caio/tenant";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { transcreverAudio } from "@/lib/caio/openai";
 import {
   normalizeMessageType,
   type ChatwootWebhook,
@@ -327,18 +328,22 @@ async function gravarMensagem(
   const tipo = inferirTipo(msg.attachments);
   const attachmentUrl = msg.attachments?.[0]?.data_url ?? null;
 
-  const { error } = await supabase.from("mensagens").insert({
-    organization_id: organizationId,
-    lead_id: leadId,
-    chatwoot_message_id: msg.chatwoot_message_id,
-    chatwoot_conversation_id: msg.conversation_id,
-    conteudo: msg.content,
-    tipo,
-    attachment_url: attachmentUrl,
-    direcao,
-    remetente_nome: msg.sender?.name,
-    privada: msg.private,
-  });
+  const { data, error } = await supabase
+    .from("mensagens")
+    .insert({
+      organization_id: organizationId,
+      lead_id: leadId,
+      chatwoot_message_id: msg.chatwoot_message_id,
+      chatwoot_conversation_id: msg.conversation_id,
+      conteudo: msg.content,
+      tipo,
+      attachment_url: attachmentUrl,
+      direcao,
+      remetente_nome: msg.sender?.name,
+      privada: msg.private,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     // unique violation no chatwoot_message_id — webhook entregue 2x ou
@@ -348,7 +353,36 @@ async function gravarMensagem(
     return false;
   }
 
+  // Áudio sem texto transcrito? Aguarda Whisper antes de retornar —
+  // tudo isso roda em after() (background) então não atrasa o response
+  // pro Chatwoot, mas shadow/sugestão IA precisam do texto pra funcionar.
+  if (tipo === "audio" && attachmentUrl && !msg.content && data?.id) {
+    await transcreverEAtualizar(supabase, data.id, attachmentUrl);
+  }
+
   return true;
+}
+
+async function transcreverEAtualizar(
+  supabase: ReturnType<typeof createAdminClient>,
+  mensagemId: string,
+  audioUrl: string,
+) {
+  const result = await transcreverAudio({ audioUrl });
+  if ("error" in result) {
+    console.warn("[caio:whisper]", "erro:", result.error);
+    return;
+  }
+  await supabase
+    .from("mensagens")
+    .update({ conteudo: result.texto })
+    .eq("id", mensagemId);
+  console.log(
+    "[caio:whisper]",
+    "transcrita:",
+    result.texto.slice(0, 60),
+    mensagemId,
+  );
 }
 
 /**
