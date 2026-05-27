@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { responderLead } from "@/app/dashboard/leads/[id]/actions";
+import {
+  responderLead,
+  gerarSugestaoResposta,
+} from "@/app/dashboard/leads/[id]/actions";
 
 export function CaixaResposta({
   leadId,
@@ -10,7 +13,8 @@ export function CaixaResposta({
   leadId: string;
   podeResponder: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pendingEnvio, startEnvioTransition] = useTransition();
+  const [pendingSugestao, startSugestaoTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [conteudo, setConteudo] = useState("");
   const [desligarCaio, setDesligarCaio] = useState(true);
@@ -32,7 +36,7 @@ export function CaixaResposta({
     form.set("leadId", leadId);
     form.set("desligar_caio", desligarCaio ? "true" : "false");
 
-    startTransition(async () => {
+    startEnvioTransition(async () => {
       const result = await responderLead(form);
       if ("error" in result) {
         setErro(result.error);
@@ -42,17 +46,45 @@ export function CaixaResposta({
     });
   }
 
+  function onSugerir() {
+    setErro(null);
+    const form = new FormData();
+    form.set("leadId", leadId);
+    startSugestaoTransition(async () => {
+      const result = await gerarSugestaoResposta(form);
+      if ("error" in result) {
+        setErro(result.error);
+        return;
+      }
+      setConteudo(result.sugestao);
+    });
+  }
+
+  const pending = pendingEnvio || pendingSugestao;
+
   return (
     <form onSubmit={onSubmit} className="border-t border-cinza-claro pt-4 mt-4">
-      <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
-        Responder pelo painel
-      </label>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider">
+          Responder pelo painel
+        </label>
+        <button
+          type="button"
+          onClick={onSugerir}
+          disabled={pending}
+          className="text-xs text-laranja hover:text-laranja-escuro font-heading font-semibold transition disabled:opacity-50"
+          title="Pega o histórico da conversa e gera o que o Caio responderia. Edite antes de enviar."
+        >
+          {pendingSugestao ? "Gerando..." : "Sugerir resposta IA →"}
+        </button>
+      </div>
+
       <textarea
         name="conteudo"
         value={conteudo}
         onChange={(e) => setConteudo(e.target.value)}
         rows={3}
-        placeholder="Digite uma resposta..."
+        placeholder="Digite uma resposta ou clica em 'Sugerir resposta IA' acima..."
         disabled={pending}
         className="w-full px-3 py-2 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition disabled:opacity-50"
       />
@@ -76,7 +108,7 @@ export function CaixaResposta({
           disabled={pending || !conteudo.trim()}
           className="px-4 py-2 bg-laranja text-white text-sm font-heading font-semibold rounded-lg hover:bg-laranja/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {pending ? "Enviando..." : "Enviar"}
+          {pendingEnvio ? "Enviando..." : "Enviar"}
         </button>
       </div>
     </form>
