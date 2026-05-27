@@ -85,7 +85,7 @@ export default async function LeadsPage({
           }
         />
       ) : (
-        <div className="bg-white rounded-2xl border border-cinza-claro overflow-hidden">
+        <div className="bg-white rounded-2xl border border-cinza-claro">
           <table className="w-full">
             <thead className="bg-offwhite border-b border-cinza-claro">
               <tr>
