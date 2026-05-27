@@ -19,7 +19,9 @@ export default async function LeadsPage({
 
   let query = supabase
     .from("leads")
-    .select("id, nome, telefone, status, source, created_at, updated_at")
+    .select(
+      "id, nome, telefone, status, source, caio_ativo, created_at, updated_at",
+    )
     .order("updated_at", { ascending: false })
     .limit(100);
 
@@ -111,7 +113,10 @@ export default async function LeadsPage({
                     </div>
                   </Td>
                   <Td>
-                    <StatusBadge status={lead.status as StatusLead} />
+                    <div className="flex flex-col items-start gap-1.5">
+                      <StatusBadge status={lead.status as StatusLead} />
+                      <CaioBadge ativo={lead.caio_ativo ?? true} />
+                    </div>
                   </Td>
                   <Td>
                     <span className="text-sm text-cinza-medio">
@@ -197,6 +202,23 @@ function Td({
   className?: string;
 }) {
   return <td className={`px-6 py-4 ${className}`}>{children}</td>;
+}
+
+function CaioBadge({ ativo }: { ativo: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-heading font-semibold border ${
+        ativo
+          ? "bg-green-50 text-green-700 border-green-300"
+          : "bg-red-50 text-red-700 border-red-300"
+      }`}
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${ativo ? "bg-green-500" : "bg-red-500"}`}
+      />
+      {ativo ? "Caio respondendo" : "Caio desligado"}
+    </span>
+  );
 }
 
 function formatRelativeDate(dateStr: string | null): string {

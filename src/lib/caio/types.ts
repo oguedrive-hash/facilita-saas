@@ -103,6 +103,7 @@ export type ChatwootWebhookConversationUpdated = {
   channel?: string;
   contact_inbox?: { source_id: string; contact_id: number; inbox_id: number };
   messages?: ChatwootMessage[];
+  labels?: string[];
   meta?: { sender?: ChatwootSender };
   additional_attributes?: Record<string, unknown>;
 };

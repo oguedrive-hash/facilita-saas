@@ -56,15 +56,19 @@ async function processWebhook(webhook: ChatwootWebhook) {
     return;
   }
 
+  const supabase = createAdminClient();
+
+  // Sincroniza estado do Caio (caio_ativo) com a etiqueta `agente-off`
+  // do Chatwoot — vem nos eventos conversation_*
+  await sincronizarCaioAtivo(supabase, org.id, webhook);
+
   const mensagens = extrairMensagens(webhook);
   if (mensagens.length === 0) {
     console.log("[caio:webhook]", "nenhuma mensagem no payload");
     return;
   }
 
-  const supabase = createAdminClient();
   let processadas = 0;
-
   for (const item of mensagens) {
     const ok = await processarMensagem(supabase, org.id, item);
     if (ok) processadas++;
@@ -78,6 +82,30 @@ async function processWebhook(webhook: ChatwootWebhook) {
     mensagens.length,
     `(${Date.now() - startedAt}ms)`,
   );
+}
+
+async function sincronizarCaioAtivo(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  webhook: ChatwootWebhook,
+) {
+  if (
+    webhook.event !== "conversation_created" &&
+    webhook.event !== "conversation_updated"
+  ) {
+    return;
+  }
+  const conv = webhook as ChatwootWebhookConversationUpdated;
+  if (typeof conv.id !== "number") return;
+
+  const labels = conv.labels ?? [];
+  const caioAtivo = !labels.includes("agente-off");
+
+  await supabase
+    .from("leads")
+    .update({ caio_ativo: caioAtivo })
+    .eq("organization_id", organizationId)
+    .eq("chatwoot_conversation_id", conv.id);
 }
 
 type MensagemNormalizada = {

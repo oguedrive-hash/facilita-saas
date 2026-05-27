@@ -68,6 +68,12 @@ export async function responderLead(formData: FormData): Promise<
         "falha ao aplicar agente-off:",
         label.error,
       );
+    } else {
+      const admin = createAdminClient();
+      await admin
+        .from("leads")
+        .update({ caio_ativo: false })
+        .eq("id", leadId);
     }
   }
 
@@ -129,7 +135,16 @@ export async function toggleCaio(formData: FormData): Promise<
     return { error: `Chatwoot recusou: ${result.error}` };
   }
 
+  // Espelha no Supabase pra listagem ficar consistente sem precisar
+  // bater na API do Chatwoot toda vez.
+  const admin = createAdminClient();
+  await admin
+    .from("leads")
+    .update({ caio_ativo: temAgenteOff })
+    .eq("id", leadId);
+
   revalidatePath(`/dashboard/leads/${leadId}`);
-  // ativo = caio respondendo = NÃO tem agente-off
+  revalidatePath("/dashboard/leads");
+  // ativo = caio respondendo = NÃO tem agente-off (depois da troca)
   return { ok: true, ativo: temAgenteOff };
 }
