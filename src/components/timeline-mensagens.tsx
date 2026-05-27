@@ -6,6 +6,7 @@ type Mensagem = {
   direcao: "entrada" | "saida";
   remetente_nome: string | null;
   created_at: string;
+  shadow?: boolean;
 };
 
 export function TimelineMensagens({ mensagens }: { mensagens: Mensagem[] }) {
@@ -29,20 +30,31 @@ export function TimelineMensagens({ mensagens }: { mensagens: Mensagem[] }) {
 
 function Balao({ mensagem }: { mensagem: Mensagem }) {
   const entrada = mensagem.direcao === "entrada";
+  const isShadow = mensagem.shadow === true;
+
+  let bubbleClasses: string;
+  if (isShadow) {
+    // Shadow: cinza/tracejado, fica claro que NÃO foi enviado
+    bubbleClasses =
+      "bg-white border-2 border-dashed border-cinza-medio text-preto";
+  } else if (entrada) {
+    bubbleClasses = "bg-offwhite border border-cinza-claro text-preto";
+  } else {
+    bubbleClasses = "bg-laranja text-white";
+  }
 
   return (
     <div className={`flex ${entrada ? "justify-start" : "justify-end"}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-          entrada
-            ? "bg-offwhite border border-cinza-claro text-preto"
-            : "bg-laranja text-white"
-        }`}
-      >
+      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${bubbleClasses}`}>
+        {isShadow && (
+          <p className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+            Sugestão do Caio IA (não enviada)
+          </p>
+        )}
         <ConteudoMensagem mensagem={mensagem} />
         <p
           className={`text-[10px] mt-1 ${
-            entrada ? "text-cinza-medio" : "text-white/70"
+            !entrada && !isShadow ? "text-white/70" : "text-cinza-medio"
           }`}
         >
           {new Date(mensagem.created_at).toLocaleString("pt-BR", {

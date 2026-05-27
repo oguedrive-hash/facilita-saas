@@ -37,11 +37,11 @@ export default async function LeadDetalhePage({
     .eq("lead_id", id)
     .order("data_inicio", { ascending: false });
 
-  // Busca histórico de mensagens
+  // Busca histórico de mensagens (incluindo shadow do Caio IA)
   const { data: mensagens } = await supabase
     .from("mensagens")
     .select(
-      "id, conteudo, tipo, attachment_url, direcao, remetente_nome, created_at",
+      "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, created_at",
     )
     .eq("lead_id", id)
     .order("created_at", { ascending: true });

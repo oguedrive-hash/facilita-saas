@@ -10,8 +10,9 @@ import {
   getLabels,
   toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
-import { chatCompletion, type ChatMessage } from "@/lib/caio/openai";
-import { CAIO_SYSTEM_PROMPT, RESUMO_PROMPT } from "@/lib/caio/system-prompt";
+import { chatCompletion } from "@/lib/caio/openai";
+import { RESUMO_PROMPT } from "@/lib/caio/system-prompt";
+import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import type { StatusLead } from "@/lib/status-config";
 
 const AGENTE_OFF = "agente-off";
@@ -347,59 +348,9 @@ export async function gerarSugestaoResposta(formData: FormData): Promise<
     return { error: "leadId ausente" };
   }
 
-  const supabase = await createClient();
-  const { data: lead } = await supabase
-    .from("leads")
-    .select("nome")
-    .eq("id", leadId)
-    .single();
-
-  const { data: mensagens } = await supabase
-    .from("mensagens")
-    .select("conteudo, direcao, tipo, remetente_nome, created_at")
-    .eq("lead_id", leadId)
-    .order("created_at", { ascending: true })
-    .limit(30);
-
-  if (!mensagens || mensagens.length === 0) {
-    return { error: "Lead ainda não tem mensagens — não dá pra sugerir resposta" };
-  }
-
-  // Monta histórico no formato OpenAI:
-  // - direcao=entrada (lead falando) → role: "user"
-  // - direcao=saida (Caio ou painel) → role: "assistant"
-  // Áudio/imagem/arquivo sem texto vira marcador "[tipo]".
-  const historico: ChatMessage[] = mensagens.map((m) => {
-    let content: string;
-    if (m.tipo !== "texto") {
-      content = m.conteudo
-        ? `[${m.tipo}: ${m.conteudo}]`
-        : `[${m.tipo} sem transcrição]`;
-    } else {
-      content = m.conteudo ?? "";
-    }
-    return {
-      role: m.direcao === "entrada" ? "user" : "assistant",
-      content,
-    };
-  });
-
-  // Sistema: prompt do Caio + dica do nome do lead se souber
-  const systemContent = lead?.nome
-    ? `${CAIO_SYSTEM_PROMPT}\n\n[Contexto: o lead se chama ${lead.nome}. Use o nome quando fizer sentido.]`
-    : CAIO_SYSTEM_PROMPT;
-
-  const result = await chatCompletion({
-    messages: [{ role: "system", content: systemContent }, ...historico],
-    temperature: 0.8,
-    max_tokens: 400,
-  });
-
-  if ("error" in result) {
-    return { error: `Falha na OpenAI: ${result.error}` };
-  }
-
-  return { ok: true, sugestao: result.content.trim() };
+  const result = await gerarRespostaCaio({ leadId });
+  if ("error" in result) return { error: result.error };
+  return { ok: true, sugestao: result.resposta };
 }
 
 /**

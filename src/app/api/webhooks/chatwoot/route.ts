@@ -5,6 +5,7 @@ import {
   resolveOrganization,
   getFacilitaOrgFallback,
 } from "@/lib/caio/tenant";
+import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import {
   normalizeMessageType,
   type ChatwootWebhook,
@@ -69,9 +70,18 @@ async function processWebhook(webhook: ChatwootWebhook) {
   }
 
   let processadas = 0;
+  // Coleta leadIds que receberam mensagem incoming nova — depois geramos
+  // shadow pra eles (1x por lead, mesmo se receberam várias msgs juntas).
+  const leadsComIncomingNova = new Set<string>();
+
   for (const item of mensagens) {
-    const ok = await processarMensagem(supabase, org.id, item);
-    if (ok) processadas++;
+    const res = await processarMensagem(supabase, org.id, item);
+    if (res.ok) {
+      processadas++;
+      if (res.leadId && item.message_type === "incoming") {
+        leadsComIncomingNova.add(res.leadId);
+      }
+    }
   }
 
   console.log(
@@ -82,6 +92,11 @@ async function processWebhook(webhook: ChatwootWebhook) {
     mensagens.length,
     `(${Date.now() - startedAt}ms)`,
   );
+
+  // Gera shadow pra cada lead que recebeu mensagem nova
+  for (const leadId of leadsComIncomingNova) {
+    await gerarShadowParaLead(supabase, org.id, leadId);
+  }
 }
 
 async function sincronizarCaioAtivo(
@@ -164,15 +179,57 @@ function extrairMensagens(webhook: ChatwootWebhook): MensagemNormalizada[] {
   return [];
 }
 
+/**
+ * Gera shadow response — chama OpenAI com o histórico do lead e grava
+ * uma "mensagem fantasma" (shadow=true) no banco. Não envia pelo Chatwoot.
+ * Serve pra comparar o que o painel responderia com o que o Caio do n8n
+ * efetivamente respondeu.
+ */
+async function gerarShadowParaLead(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+) {
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("caio_ativo, chatwoot_conversation_id")
+    .eq("id", leadId)
+    .single();
+
+  // Se Caio tá desligado, não gera shadow (humano assumiu mesmo)
+  if (!lead || !lead.caio_ativo) return;
+
+  const result = await gerarRespostaCaio({ leadId });
+  if ("error" in result) {
+    console.warn("[caio:shadow]", "erro ao gerar:", result.error);
+    return;
+  }
+
+  await supabase.from("mensagens").insert({
+    organization_id: organizationId,
+    lead_id: leadId,
+    chatwoot_message_id: null, // null pra evitar conflict com webhook
+    chatwoot_conversation_id: lead.chatwoot_conversation_id,
+    conteudo: result.resposta,
+    tipo: "texto",
+    direcao: "saida",
+    remetente_nome: "Caio IA (shadow)",
+    privada: false,
+    shadow: true,
+  });
+
+  console.log("[caio:shadow]", "gerada pra lead", leadId);
+}
+
 async function processarMensagem(
   supabase: ReturnType<typeof createAdminClient>,
   organizationId: string,
   msg: MensagemNormalizada,
-): Promise<boolean> {
-  if (msg.private) return false;
+): Promise<{ ok: boolean; leadId?: string }> {
+  if (msg.private) return { ok: false };
   if (!msg.conversation_id) {
     console.log("[caio:msg]", "sem conversation_id, ignorando");
-    return false;
+    return { ok: false };
   }
 
   let leadId: string | null = null;
@@ -181,7 +238,7 @@ async function processarMensagem(
     const phone = msg.sender?.phone_number;
     if (!phone) {
       console.warn("[caio:msg]", "incoming sem phone_number do sender");
-      return false;
+      return { ok: false };
     }
     if (!phoneValido(phone)) {
       console.warn(
@@ -189,7 +246,7 @@ async function processarMensagem(
         "phone invalido (provavelmente teste do Evolution):",
         phone,
       );
-      return false;
+      return { ok: false };
     }
 
     const { data: existing } = await supabase
@@ -229,7 +286,7 @@ async function processarMensagem(
 
       if (error || !novo) {
         console.error("[caio:lead]", "erro ao inserir:", error);
-        return false;
+        return { ok: false };
       }
       leadId = novo.id;
     }
@@ -249,14 +306,15 @@ async function processarMensagem(
         msg.conversation_id,
         ")",
       );
-      return false;
+      return { ok: false };
     }
     leadId = lead.id;
   }
 
-  if (!leadId) return false;
+  if (!leadId) return { ok: false };
 
-  return await gravarMensagem(supabase, organizationId, leadId, msg);
+  const gravou = await gravarMensagem(supabase, organizationId, leadId, msg);
+  return { ok: gravou, leadId: gravou ? leadId : undefined };
 }
 
 async function gravarMensagem(
