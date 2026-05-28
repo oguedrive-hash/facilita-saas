@@ -226,6 +226,36 @@ async function responderLeadAuto(
     .single();
   const responderComAudio = ultimaIncoming?.tipo === "audio";
 
+  // Marca que Caio começou a processar — UI mostra "está digitando..."
+  await supabase
+    .from("leads")
+    .update({ caio_processing_since: new Date().toISOString() })
+    .eq("id", leadId);
+
+  try {
+    await gerarERespondeCaio(
+      supabase,
+      organizationId,
+      leadId,
+      lead.chatwoot_conversation_id,
+      responderComAudio,
+    );
+  } finally {
+    // Sempre limpa o flag, mesmo em erro — UI volta ao normal
+    await supabase
+      .from("leads")
+      .update({ caio_processing_since: null })
+      .eq("id", leadId);
+  }
+}
+
+async function gerarERespondeCaio(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+  conversationId: number,
+  responderComAudio: boolean,
+) {
   // Gera resposta
   const result = await gerarRespostaCaio({ leadId });
   if ("error" in result) {
@@ -256,7 +286,7 @@ async function responderLeadAuto(
       );
       // Fallback: envia texto se TTS falhou
       const sent = await enviarMensagem({
-        conversationId: lead.chatwoot_conversation_id,
+        conversationId,
         content: texto,
       });
       if ("error" in sent) {
@@ -266,7 +296,7 @@ async function responderLeadAuto(
     }
 
     const sent = await enviarMensagemComAudio({
-      conversationId: lead.chatwoot_conversation_id,
+      conversationId,
       audio: tts.audio,
       filename: "caio.mp3",
       mimeType: tts.mimeType,
@@ -280,7 +310,7 @@ async function responderLeadAuto(
       // Fallback: se Chatwoot recusou áudio (timeout, formato, etc),
       // envia texto pra pelo menos o lead receber alguma resposta.
       const fallback = await enviarMensagem({
-        conversationId: lead.chatwoot_conversation_id,
+        conversationId,
         content: texto,
       });
       if ("error" in fallback) {
@@ -293,7 +323,7 @@ async function responderLeadAuto(
     console.log("[caio:auto]", "respondeu áudio pra lead", leadId);
   } else {
     const sent = await enviarMensagem({
-      conversationId: lead.chatwoot_conversation_id,
+      conversationId,
       content: texto,
     });
     if ("error" in sent) {

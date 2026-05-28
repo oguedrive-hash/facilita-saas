@@ -6,29 +6,29 @@ import Link from "next/link";
 export default async function AgendaPage() {
   const supabase = await createClient();
 
-  // Próximos agendamentos (a partir de agora)
-  const { data: proximosAgendamentos } = await supabase
-    .from("agendamentos")
-    .select(
-      "id, data_inicio, data_fim, status, meet_link, lead_id, leads(nome, telefone)",
-    )
-    .gte("data_inicio", new Date().toISOString())
-    .order("data_inicio", { ascending: true })
-    .limit(20);
-
-  // Agendamentos passados (últimos 30 dias)
+  const agora = new Date().toISOString();
   const trintaDiasAtras = new Date();
   trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
 
-  const { data: agendamentosPassados } = await supabase
-    .from("agendamentos")
-    .select(
-      "id, data_inicio, status, lead_id, leads(nome, telefone)",
-    )
-    .lt("data_inicio", new Date().toISOString())
-    .gte("data_inicio", trintaDiasAtras.toISOString())
-    .order("data_inicio", { ascending: false })
-    .limit(20);
+  // Paraleliza as duas queries
+  const [{ data: proximosAgendamentos }, { data: agendamentosPassados }] =
+    await Promise.all([
+      supabase
+        .from("agendamentos")
+        .select(
+          "id, data_inicio, data_fim, status, meet_link, lead_id, leads(nome, telefone)",
+        )
+        .gte("data_inicio", agora)
+        .order("data_inicio", { ascending: true })
+        .limit(20),
+      supabase
+        .from("agendamentos")
+        .select("id, data_inicio, status, lead_id, leads(nome, telefone)")
+        .lt("data_inicio", agora)
+        .gte("data_inicio", trintaDiasAtras.toISOString())
+        .order("data_inicio", { ascending: false })
+        .limit(20),
+    ]);
 
   return (
     <div>

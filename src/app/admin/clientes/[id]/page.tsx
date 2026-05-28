@@ -10,32 +10,31 @@ export default async function ClienteDetalhePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: cliente, error } = await supabase
-    .from("organizations")
-    .select("*")
-    .eq("id", id)
-    .single();
+  // Paraleliza pra evitar 4 round-trips sequenciais
+  const [
+    { data: cliente, error },
+    { count: leadsCliente },
+    { count: agendamentosCliente },
+    { data: usuarios },
+  ] = await Promise.all([
+    supabase.from("organizations").select("*").eq("id", id).single(),
+    supabase
+      .from("leads")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", id),
+    supabase
+      .from("agendamentos")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", id),
+    supabase
+      .from("profiles")
+      .select("id, nome, role, created_at")
+      .eq("organization_id", id),
+  ]);
 
   if (error || !cliente) {
     notFound();
   }
-
-  // Contagens deste cliente específico
-  const { count: leadsCliente } = await supabase
-    .from("leads")
-    .select("*", { count: "exact", head: true })
-    .eq("organization_id", id);
-
-  const { count: agendamentosCliente } = await supabase
-    .from("agendamentos")
-    .select("*", { count: "exact", head: true })
-    .eq("organization_id", id);
-
-  // Usuários vinculados
-  const { data: usuarios } = await supabase
-    .from("profiles")
-    .select("id, nome, role, created_at")
-    .eq("organization_id", id);
 
   return (
     <div>

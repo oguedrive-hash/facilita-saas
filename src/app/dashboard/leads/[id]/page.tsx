@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusSelector } from "@/components/status-selector";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
-import { AutoRefresh } from "@/components/auto-refresh";
+import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
 import { ToggleCaio } from "@/components/toggle-caio";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
@@ -20,31 +20,30 @@ export default async function LeadDetalhePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: lead, error } = await supabase
-    .from("leads")
-    .select("*")
-    .eq("id", id)
-    .single();
+  // Paraleliza as 3 queries Supabase
+  const [
+    { data: lead, error },
+    { data: agendamentos },
+    { data: mensagens },
+  ] = await Promise.all([
+    supabase.from("leads").select("*").eq("id", id).single(),
+    supabase
+      .from("agendamentos")
+      .select("id, data_inicio, data_fim, status, meet_link, observacoes")
+      .eq("lead_id", id)
+      .order("data_inicio", { ascending: false }),
+    supabase
+      .from("mensagens")
+      .select(
+        "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, created_at",
+      )
+      .eq("lead_id", id)
+      .order("created_at", { ascending: true }),
+  ]);
 
   if (error || !lead) {
     notFound();
   }
-
-  // Busca agendamentos vinculados
-  const { data: agendamentos } = await supabase
-    .from("agendamentos")
-    .select("id, data_inicio, data_fim, status, meet_link, observacoes")
-    .eq("lead_id", id)
-    .order("data_inicio", { ascending: false });
-
-  // Busca histórico de mensagens (incluindo shadow do Caio IA)
-  const { data: mensagens } = await supabase
-    .from("mensagens")
-    .select(
-      "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, created_at",
-    )
-    .eq("lead_id", id)
-    .order("created_at", { ascending: true });
 
   // Estado do Caio: usa o que tá no banco (atualizado pelo webhook).
   // Como fallback (banco desatualizado / lead antigo), bate na Chatwoot
@@ -70,7 +69,7 @@ export default async function LeadDetalhePage({
 
   return (
     <div>
-      <AutoRefresh intervalMs={5000} />
+      <RealtimeLeadUpdates leadId={lead.id} />
 
       {/* Breadcrumb */}
       <Link
@@ -125,7 +124,14 @@ export default async function LeadDetalhePage({
         <div className="md:col-span-2 space-y-6">
           {/* Histórico de mensagens + caixa de resposta */}
           <Card titulo="Conversa">
-            <TimelineMensagens mensagens={mensagens ?? []} />
+            <TimelineMensagens
+              mensagens={mensagens ?? []}
+              caioDigitando={
+                !!lead.caio_processing_since &&
+                Date.now() - new Date(lead.caio_processing_since).getTime() <
+                  90_000
+              }
+            />
             <CaixaResposta
               leadId={lead.id}
               podeResponder={Boolean(lead.chatwoot_conversation_id)}

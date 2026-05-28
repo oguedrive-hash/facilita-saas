@@ -43,12 +43,11 @@ export default async function LeadsPage({
     query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
   }
 
-  const { data: leads, error } = await query;
-
-  // Contagens por status e caio (pros filtros)
-  const { data: contagensRaw } = await supabase
-    .from("leads")
-    .select("status, caio_ativo");
+  // Paraleliza lista filtrada + contagens globais (pros chips de filtro)
+  const [{ data: leads, error }, { data: contagensRaw }] = await Promise.all([
+    query,
+    supabase.from("leads").select("status, caio_ativo"),
+  ]);
   const contagens: Record<string, number> = {
     todos: contagensRaw?.length ?? 0,
     caio_on: 0,

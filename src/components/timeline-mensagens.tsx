@@ -12,8 +12,14 @@ type Mensagem = {
   shadow?: boolean;
 };
 
-export function TimelineMensagens({ mensagens }: { mensagens: Mensagem[] }) {
-  if (mensagens.length === 0) {
+export function TimelineMensagens({
+  mensagens,
+  caioDigitando = false,
+}: {
+  mensagens: Mensagem[];
+  caioDigitando?: boolean;
+}) {
+  if (mensagens.length === 0 && !caioDigitando) {
     return (
       <p className="text-sm text-cinza-medio text-center py-8">
         Nenhuma mensagem ainda. Quando o lead conversar, as mensagens aparecem
@@ -27,6 +33,33 @@ export function TimelineMensagens({ mensagens }: { mensagens: Mensagem[] }) {
       {mensagens.map((m) => (
         <Balao key={m.id} mensagem={m} />
       ))}
+      {caioDigitando && <BalaoDigitando />}
+    </div>
+  );
+}
+
+function BalaoDigitando() {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[75%] px-4 py-3 rounded-2xl bg-laranja text-white">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium opacity-90">Caio está digitando</span>
+          <span className="flex gap-0.5">
+            <span
+              className="w-1 h-1 bg-white rounded-full animate-bounce"
+              style={{ animationDelay: "0ms" }}
+            />
+            <span
+              className="w-1 h-1 bg-white rounded-full animate-bounce"
+              style={{ animationDelay: "150ms" }}
+            />
+            <span
+              className="w-1 h-1 bg-white rounded-full animate-bounce"
+              style={{ animationDelay: "300ms" }}
+            />
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
