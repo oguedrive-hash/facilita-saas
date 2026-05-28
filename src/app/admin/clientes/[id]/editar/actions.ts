@@ -61,6 +61,10 @@ export async function editarClienteAction(
     use_speaker_boost: formData.get("voice_use_speaker_boost") === "on",
   };
 
+  const caio_debounce_segundos = Math.round(
+    clamp(num(formData.get("caio_debounce_segundos"), 6), 1, 60),
+  );
+
   if (!name) return { error: "Nome é obrigatório" };
   if (!email_contato) return { error: "Email é obrigatório" };
 
@@ -74,6 +78,7 @@ export async function editarClienteAction(
       prompt_system: prompt_system || null,
       voice_id: voice_id || null,
       voice_settings,
+      caio_debounce_segundos,
       ativo,
     })
     .eq("id", id);

@@ -99,11 +99,62 @@ async function processWebhook(webhook: ChatwootWebhook) {
     `(${Date.now() - startedAt}ms)`,
   );
 
-  // Pra cada lead com incoming nova: gera resposta + envia pelo Chatwoot.
-  // Substituiu a etapa de "shadow" — agora o painel é o motor principal.
+  // Pra cada lead com incoming nova: agenda resposta com debounce. Se chegar
+  // outra msg desse lead dentro do debounce, o ciclo antigo desiste e o novo
+  // assume — Caio so responde quando o lead realmente parou de digitar.
   for (const leadId of leadsComIncomingNova) {
-    await responderLeadAuto(supabase, org.id, leadId);
+    await agendarRespostaCaioComDebounce(supabase, org.id, leadId);
   }
+}
+
+/**
+ * Agenda resposta do Caio com debounce: se chegar outra msg do mesmo lead
+ * antes do timer estourar, esse ciclo desiste e o novo assume. Caio so
+ * responde quando o lead parou de mandar mensagens por DEBOUNCE segundos.
+ */
+async function agendarRespostaCaioComDebounce(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+) {
+  // Le tempo de debounce da org (default 6s se nao configurado)
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("caio_debounce_segundos")
+    .eq("id", organizationId)
+    .single();
+  const debounceMs = (org?.caio_debounce_segundos ?? 6) * 1000;
+
+  // Marca o "previsto para" — esse timestamp e o ID desse ciclo de debounce.
+  // Se outra msg chegar e reescrever, esse ciclo perdeu e vai desistir.
+  const meuPrevisto = new Date(Date.now() + debounceMs).toISOString();
+  await supabase
+    .from("leads")
+    .update({ caio_responder_em: meuPrevisto })
+    .eq("id", leadId);
+
+  // Aguarda o debounce
+  await new Promise((r) => setTimeout(r, debounceMs));
+
+  // Re-checa: ainda sou o vencedor? Se outra msg reagendou pra mais tarde,
+  // caio_responder_em vai ser != do meu, e eu desisto.
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("caio_responder_em")
+    .eq("id", leadId)
+    .single();
+
+  if (!lead || lead.caio_responder_em !== meuPrevisto) {
+    console.log("[caio:debounce] reagendado, desistindo", leadId);
+    return;
+  }
+
+  // Sou o vencedor — processa e limpa o flag
+  await responderLeadAuto(supabase, organizationId, leadId);
+  await supabase
+    .from("leads")
+    .update({ caio_responder_em: null })
+    .eq("id", leadId);
 }
 
 async function sincronizarCaioAtivo(

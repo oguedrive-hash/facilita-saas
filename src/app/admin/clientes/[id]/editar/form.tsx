@@ -23,6 +23,7 @@ type ClienteData = {
   prompt_system: string | null;
   voice_id: string | null;
   voice_settings: VoiceSettings | null;
+  caio_debounce_segundos: number | null;
   ativo: boolean;
 };
 
@@ -183,6 +184,30 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
                 Aumenta similaridade com o speaker (recomendado ligado)
               </span>
             </label>
+          </div>
+
+          <div>
+            <label
+              htmlFor="caio_debounce_segundos"
+              className="block text-sm font-heading font-semibold text-preto mb-1.5"
+            >
+              Tempo de espera antes de responder (segundos)
+            </label>
+            <input
+              id="caio_debounce_segundos"
+              name="caio_debounce_segundos"
+              type="number"
+              min={1}
+              max={60}
+              step={1}
+              defaultValue={cliente.caio_debounce_segundos ?? 6}
+              className="w-32 px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition"
+            />
+            <p className="text-xs text-cinza-medio mt-1">
+              Quando o lead manda várias mensagens em sequência, o Caio espera
+              esse tempo sem mensagem nova antes de responder (responde uma vez
+              ao conjunto). Padrão: 6s. Entre 1 e 60.
+            </p>
           </div>
 
           <div>

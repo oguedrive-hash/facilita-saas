@@ -14,7 +14,7 @@ export default async function EditarClientePage({
   const { data: cliente, error } = await supabase
     .from("organizations")
     .select(
-      "id, name, email_contato, whatsapp_numero, plano, prompt_system, voice_id, voice_settings, ativo",
+      "id, name, email_contato, whatsapp_numero, plano, prompt_system, voice_id, voice_settings, caio_debounce_segundos, ativo",
     )
     .eq("id", id)
     .single();
