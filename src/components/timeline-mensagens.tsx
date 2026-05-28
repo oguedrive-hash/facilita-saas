@@ -1,5 +1,9 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import { BotaoRetranscrever } from "./botao-retranscrever";
 import { AcoesShadow } from "./acoes-shadow";
+import { BalaoDigitando } from "./balao-digitando";
 
 type Mensagem = {
   id: string;
@@ -12,8 +16,6 @@ type Mensagem = {
   shadow?: boolean;
 };
 
-import { BalaoDigitando } from "./balao-digitando";
-
 export function TimelineMensagens({
   mensagens,
   caioProcessingSince = null,
@@ -21,6 +23,16 @@ export function TimelineMensagens({
   mensagens: Mensagem[];
   caioProcessingSince?: string | null;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Quando muda quantidade de mensagens (msg nova) ou status do "digitando",
+  // rola pro fim. behavior: smooth pra animar suavemente.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [mensagens.length, caioProcessingSince]);
+
   if (mensagens.length === 0 && !caioProcessingSince) {
     return (
       <p className="text-sm text-cinza-medio text-center py-8">
@@ -31,7 +43,10 @@ export function TimelineMensagens({
   }
 
   return (
-    <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+    <div
+      ref={scrollRef}
+      className="space-y-3 max-h-[600px] overflow-y-auto pr-2"
+    >
       {mensagens.map((m) => (
         <Balao key={m.id} mensagem={m} />
       ))}
