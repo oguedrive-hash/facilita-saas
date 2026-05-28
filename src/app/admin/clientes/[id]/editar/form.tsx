@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { editarClienteAction, type EditarClienteResult } from "./actions";
 
@@ -26,12 +26,6 @@ type ClienteData = {
   ativo: boolean;
 };
 
-type VoiceOption = {
-  voice_id: string;
-  name: string;
-  category: string;
-};
-
 const DEFAULTS = {
   stability: 0.25,
   similarity_boost: 0.9,
@@ -47,24 +41,12 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
   );
 
   const vs = cliente.voice_settings ?? {};
-  const [voices, setVoices] = useState<VoiceOption[]>([]);
-  const [voicesError, setVoicesError] = useState<string | null>(null);
   const [stability, setStability] = useState(vs.stability ?? DEFAULTS.stability);
   const [similarity, setSimilarity] = useState(
     vs.similarity_boost ?? DEFAULTS.similarity_boost,
   );
   const [style, setStyle] = useState(vs.style ?? DEFAULTS.style);
   const [speed, setSpeed] = useState(vs.speed ?? DEFAULTS.speed);
-
-  useEffect(() => {
-    fetch("/api/admin/elevenlabs/voices")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.voices) setVoices(data.voices);
-        else setVoicesError(data.error ?? "erro desconhecido");
-      })
-      .catch((e) => setVoicesError(e.message));
-  }, []);
 
   return (
     <form action={action} className="space-y-8">
@@ -128,39 +110,18 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
               htmlFor="voice_id"
               className="block text-sm font-heading font-semibold text-preto mb-1.5"
             >
-              Voz (ElevenLabs)
+              Voice ID (ElevenLabs)
             </label>
-            {voices.length > 0 ? (
-              <select
-                id="voice_id"
-                name="voice_id"
-                defaultValue={cliente.voice_id ?? ""}
-                className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition"
-              >
-                <option value="">— Selecione uma voz —</option>
-                {voices.map((v) => (
-                  <option key={v.voice_id} value={v.voice_id}>
-                    {v.name}
-                    {v.category ? ` (${v.category})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                id="voice_id"
-                name="voice_id"
-                type="text"
-                defaultValue={cliente.voice_id ?? ""}
-                placeholder="Ex: pNInz6obpgDQGcFmaJgB"
-                className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition font-mono text-sm"
-              />
-            )}
+            <input
+              id="voice_id"
+              name="voice_id"
+              type="text"
+              defaultValue={cliente.voice_id ?? ""}
+              placeholder="Ex: pNInz6obpgDQGcFmaJgB"
+              className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition font-mono text-sm"
+            />
             <p className="text-xs text-cinza-medio mt-1">
-              {voicesError
-                ? `Falha ao carregar vozes da ElevenLabs (${voicesError}). Coloque o ID manualmente.`
-                : voices.length === 0
-                  ? "Carregando vozes da sua conta ElevenLabs..."
-                  : `${voices.length} vozes disponíveis na sua conta ElevenLabs.`}
+              ID da voz da sua conta ElevenLabs. Encontra em https://elevenlabs.io/app/voice-lab
             </p>
           </div>
 
