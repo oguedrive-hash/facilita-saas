@@ -7,6 +7,7 @@ import { CaixaResposta } from "@/components/caixa-resposta";
 import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
 import { ToggleCaio } from "@/components/toggle-caio";
 import { ToggleFollowup } from "@/components/toggle-followup";
+import { NavegacaoLeads } from "@/components/navegacao-leads";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
@@ -21,11 +22,12 @@ export default async function LeadDetalhePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Paraleliza as 3 queries Supabase
+  // Paraleliza as queries Supabase
   const [
     { data: lead, error },
     { data: agendamentos },
     { data: mensagens },
+    { data: idsLeads },
   ] = await Promise.all([
     supabase.from("leads").select("*").eq("id", id).single(),
     supabase
@@ -40,6 +42,12 @@ export default async function LeadDetalhePage({
       )
       .eq("lead_id", id)
       .order("created_at", { ascending: true }),
+    // Lista de IDs ordenada (mesma ordem da lista) pra navegação anterior/próximo
+    supabase
+      .from("leads")
+      .select("id")
+      .order("updated_at", { ascending: false })
+      .limit(500),
   ]);
 
   if (error || !lead) {
@@ -68,17 +76,35 @@ export default async function LeadDetalhePage({
 
   const statusConfig = STATUS_CONFIG[lead.status as StatusLead];
 
+  // Encontra próximo / anterior na lista ordenada
+  const ids = (idsLeads ?? []).map((l) => l.id);
+  const idx = ids.indexOf(lead.id);
+  const anteriorId = idx > 0 ? ids[idx - 1] : null;
+  const proximoId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : null;
+  const totalNavegavel = ids.length;
+  const posicao = idx + 1;
+
   return (
     <div>
       <RealtimeLeadUpdates leadId={lead.id} />
 
-      {/* Breadcrumb */}
-      <Link
-        href="/dashboard/leads"
-        className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium mb-4 transition"
-      >
-        ← Voltar pra Leads
-      </Link>
+      {/* Breadcrumb + navegação anterior/próximo */}
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <Link
+          href="/dashboard/leads"
+          className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium transition"
+        >
+          ← Voltar pra Leads
+        </Link>
+        {totalNavegavel > 1 && (
+          <NavegacaoLeads
+            anteriorId={anteriorId}
+            proximoId={proximoId}
+            posicao={posicao}
+            total={totalNavegavel}
+          />
+        )}
+      </div>
 
       {/* Header */}
       <div className="bg-white rounded-2xl border border-cinza-claro p-8 mb-6">

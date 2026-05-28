@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { AcoesCliente } from "@/components/acoes-cliente";
 
 export default async function ClienteDetalhePage({
   params,
@@ -167,11 +168,15 @@ export default async function ClienteDetalhePage({
       </div>
 
       {/* Ações */}
-      <div className="mt-6 p-6 bg-amber-50 border border-amber-200 rounded-2xl">
-        <p className="text-sm text-amber-900">
-          🚧 Em construção: editar dados, pausar cliente, ver histórico de cobranças,
-          editar prompt do Caio, deletar.
-        </p>
+      <div className="mt-6">
+        <h2 className="text-base font-heading font-bold text-preto mb-3">
+          Gerenciar cliente
+        </h2>
+        <AcoesCliente
+          clienteId={cliente.id}
+          nomeCliente={cliente.name}
+          ativoInicial={cliente.ativo}
+        />
       </div>
     </div>
   );
