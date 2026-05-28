@@ -28,13 +28,16 @@ export async function gerarRespostaCaio(opts: {
       .select("conteudo, direcao, tipo, created_at")
       .eq("lead_id", opts.leadId)
       .eq("shadow", false) // ignora as próprias shadows do histórico
-      .order("created_at", { ascending: true })
+      // Pega as N MAIS RECENTES (desc + limit), depois reverte pra cronológica
+      .order("created_at", { ascending: false })
       .limit(limit),
   ]);
 
   if (!mensagens || mensagens.length === 0) {
     return { error: "Lead sem mensagens" };
   }
+  // Inverte pra ordem cronológica (mais antiga primeiro) — é como o OpenAI espera
+  mensagens.reverse();
 
   // Prompt vem exclusivamente da organization — sem fallback hardcoded.
   if (!lead?.organization_id) {
