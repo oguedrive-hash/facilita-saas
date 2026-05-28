@@ -20,6 +20,7 @@ export const STATUS_CONFIG: Record<
     cor: string;
     bg: string;
     border: string;
+    barra: string;
     ordem: number;
   }
 > = {
@@ -29,6 +30,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-blue-700",
     bg: "bg-blue-50",
     border: "border-blue-200",
+    barra: "bg-blue-500",
     ordem: 1,
   },
   em_conversa: {
@@ -37,6 +39,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-laranja",
     bg: "bg-laranja/10",
     border: "border-laranja/30",
+    barra: "bg-laranja",
     ordem: 2,
   },
   followup: {
@@ -45,6 +48,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-amber-700",
     bg: "bg-amber-50",
     border: "border-amber-200",
+    barra: "bg-amber-500",
     ordem: 3,
   },
   contatar_futuramente: {
@@ -53,6 +57,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-purple-700",
     bg: "bg-purple-50",
     border: "border-purple-200",
+    barra: "bg-purple-500",
     ordem: 4,
   },
   reuniao_agendada: {
@@ -61,6 +66,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-emerald-700",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
+    barra: "bg-emerald-500",
     ordem: 5,
   },
   fechou: {
@@ -69,6 +75,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-emerald-800",
     bg: "bg-emerald-100",
     border: "border-emerald-300",
+    barra: "bg-emerald-700",
     ordem: 6,
   },
   perdido: {
@@ -77,6 +84,7 @@ export const STATUS_CONFIG: Record<
     cor: "text-cinza-medio",
     bg: "bg-cinza-claro",
     border: "border-cinza-claro",
+    barra: "bg-cinza-medio",
     ordem: 7,
   },
 };

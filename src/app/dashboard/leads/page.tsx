@@ -1,13 +1,18 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { StatusSelector } from "@/components/status-selector";
 import { EmptyState } from "@/components/empty-state";
+import { PeriodoDropdown } from "@/components/periodo-dropdown";
+import { KanbanDrag } from "@/components/kanban-drag";
+import { SalvarViewPadrao } from "@/components/salvar-view-padrao";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 type CaioFilter = "todos" | "on" | "off";
 type Periodo = "todos" | "hoje" | "7d" | "30d";
 type SortField = "updated_at" | "created_at" | "nome" | "status";
 type SortOrder = "asc" | "desc";
+type View = "lista" | "kanban";
 
 type FilterParams = {
   status?: StatusLead | "todos";
@@ -19,6 +24,7 @@ type FilterParams = {
   sort?: SortField;
   order?: SortOrder;
   page?: string;
+  view?: View;
 };
 
 const PER_PAGE = 25;
@@ -56,6 +62,15 @@ export default async function LeadsPage({
   const sortOrder = params.order ?? "desc";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PER_PAGE;
+  // View: usa o ?view= da URL se passou, senao cookie de preferencia, senao lista
+  const cookieStore = await cookies();
+  const viewPreferida = cookieStore.get("lead_view_preferida")?.value;
+  const view: View =
+    params.view === "kanban" || params.view === "lista"
+      ? params.view
+      : viewPreferida === "kanban"
+        ? "kanban"
+        : "lista";
 
   const supabase = await createClient();
 
@@ -64,12 +79,19 @@ export default async function LeadsPage({
     .select(
       "id, nome, telefone, status, source, caio_ativo, created_at, updated_at",
       { count: "exact" },
-    )
-    .order(sortField, { ascending: sortOrder === "asc" })
-    .range(offset, offset + PER_PAGE - 1);
+    );
 
-  if (statusFilter !== "todos") {
-    query = query.eq("status", statusFilter);
+  if (view === "kanban") {
+    // Kanban: ordenacao fixa por ultima atividade, sem paginacao (mostra todos)
+    query = query.order("updated_at", { ascending: false }).limit(500);
+  } else {
+    query = query
+      .order(sortField, { ascending: sortOrder === "asc" })
+      .range(offset, offset + PER_PAGE - 1);
+    // Status filter so na lista — no kanban as colunas ja sao por status
+    if (statusFilter !== "todos") {
+      query = query.eq("status", statusFilter);
+    }
   }
   if (caioFilter === "on") query = query.eq("caio_ativo", true);
   if (caioFilter === "off") query = query.eq("caio_ativo", false);
@@ -128,7 +150,14 @@ export default async function LeadsPage({
     // Quando muda filtro, volta pra page 1
     const pg = opts.page ?? "1";
     if (s !== "todos") sp.set("status", s);
-    if (c !== "todos") sp.set("caio", c);
+    // caio=todos sempre setado se passou explicitamente — garante que Next
+    // veja mudanca de searchParam quando desativa filtro ativo (sem isso o
+    // Router Cache pode reutilizar render anterior).
+    if (opts.caio !== undefined) {
+      sp.set("caio", c);
+    } else if (c !== "todos") {
+      sp.set("caio", c);
+    }
     if (qq) sp.set("q", qq);
     if (pEffective !== "todos") sp.set("periodo", pEffective);
     if (d) sp.set("de", d);
@@ -136,6 +165,14 @@ export default async function LeadsPage({
     if (sf !== "updated_at") sp.set("sort", sf);
     if (so !== "desc") sp.set("order", so);
     if (pg !== "1") sp.set("page", pg);
+    // Se view foi passada explicitamente, sempre seta na URL pra sobrescrever
+    // o cookie de preferencia. Sem isso, clicar em "Lista" estando no Kanban
+    // (com cookie salvo) navegaria pra URL vazia e o cookie traria de volta.
+    if (opts.view !== undefined) {
+      sp.set("view", opts.view);
+    } else if (view !== "lista") {
+      sp.set("view", view);
+    }
     const qs = sp.toString();
     return qs ? `/dashboard/leads?${qs}` : "/dashboard/leads";
   }
@@ -159,8 +196,8 @@ export default async function LeadsPage({
       {/* Header compacto: titulo + busca + export em uma linha */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-heading font-bold text-preto">Leads</h1>
-          <span className="text-xs text-cinza-medio">
+          <h1 className="text-4xl font-heading font-bold text-preto">Leads</h1>
+          <span className="text-sm text-cinza-medio">
             {contagens.todos} no total
           </span>
         </div>
@@ -181,141 +218,192 @@ export default async function LeadsPage({
             )}
             {de && <input type="hidden" name="de" value={de} />}
             {ate && <input type="hidden" name="ate" value={ate} />}
-            <input
-              type="search"
-              name="q"
-              defaultValue={searchQuery}
-              placeholder="Buscar nome ou telefone..."
-              className="px-3 py-1.5 w-56 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-            />
+            <div className="relative">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4 text-cinza-medio absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                type="text"
+                name="q"
+                defaultValue={searchQuery}
+                placeholder="Buscar nome ou telefone..."
+                className="pl-9 pr-9 py-2.5 w-80 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja focus:ring-2 focus:ring-laranja/20 transition"
+              />
+              {searchQuery && (
+                <Link
+                  href={buildHref({ q: "" })}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cinza-medio hover:text-preto transition text-sm"
+                  title="Limpar busca"
+                >
+                  ✕
+                </Link>
+              )}
+            </div>
             <button
               type="submit"
-              className="px-3 py-1.5 bg-preto text-white text-sm font-heading font-semibold rounded-lg hover:opacity-90 transition"
-            >
-              Buscar
-            </button>
-            {searchQuery && (
-              <Link
-                href={buildHref({ q: "" })}
-                className="px-2 py-1.5 text-xs text-cinza-medio hover:text-preto transition"
-                title="Limpar busca"
-              >
-                ✕
-              </Link>
-            )}
+              className="sr-only"
+              aria-label="Buscar"
+            />
+            {/* Enter no input ja submete; botao escondido pra acessibilidade */}
           </form>
+          {/* Caio on/off toggle group */}
+          <div className="inline-flex rounded-lg overflow-hidden">
+            <Link
+              href={buildHref({
+                caio: caioFilter === "on" ? "todos" : "on",
+              })}
+              className={`px-4 py-2.5 text-sm font-heading font-semibold transition ${
+                caioFilter === "on"
+                  ? "bg-green-200 text-green-800"
+                  : "bg-green-100 text-green-700 hover:bg-green-200"
+              }`}
+              title="Filtrar leads com Caio respondendo"
+            >
+              {contagens.caio_on}
+            </Link>
+            <Link
+              href={buildHref({
+                caio: caioFilter === "off" ? "todos" : "off",
+              })}
+              className={`px-4 py-2.5 text-sm font-heading font-semibold transition ${
+                caioFilter === "off"
+                  ? "bg-red-200 text-red-800"
+                  : "bg-red-100 text-red-700 hover:bg-red-200"
+              }`}
+              title="Filtrar leads com Caio desligado"
+            >
+              {contagens.caio_off}
+            </Link>
+          </div>
+          {/* Toggle Lista / Kanban */}
+          <div className="inline-flex rounded-lg border border-cinza-claro overflow-hidden">
+            <Link
+              href={buildHref({ view: "lista" })}
+              className={`px-3 py-2.5 text-sm font-heading font-semibold transition border-r border-cinza-claro flex items-center gap-1.5 ${
+                view === "lista"
+                  ? "bg-preto text-white"
+                  : "bg-white text-cinza-medio hover:text-preto"
+              }`}
+              title="Visualização em lista"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <line x1="8" x2="21" y1="6" y2="6" />
+                <line x1="8" x2="21" y1="12" y2="12" />
+                <line x1="8" x2="21" y1="18" y2="18" />
+                <line x1="3" x2="3.01" y1="6" y2="6" />
+                <line x1="3" x2="3.01" y1="12" y2="12" />
+                <line x1="3" x2="3.01" y1="18" y2="18" />
+              </svg>
+              Lista
+            </Link>
+            <Link
+              href={buildHref({ view: "kanban" })}
+              className={`px-3 py-2.5 text-sm font-heading font-semibold transition flex items-center gap-1.5 ${
+                view === "kanban"
+                  ? "bg-preto text-white"
+                  : "bg-white text-cinza-medio hover:text-preto"
+              }`}
+              title="Visualização em kanban"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <rect width="6" height="14" x="3" y="5" rx="1" />
+                <rect width="6" height="10" x="15" y="5" rx="1" />
+                <rect width="6" height="6" x="9" y="5" rx="1" />
+              </svg>
+              Kanban
+            </Link>
+          </div>
+          <SalvarViewPadrao
+            viewAtual={view}
+            viewSalva={
+              viewPreferida === "kanban" || viewPreferida === "lista"
+                ? viewPreferida
+                : null
+            }
+          />
+          <PeriodoDropdown
+            periodo={periodo}
+            de={de}
+            ate={ate}
+            presets={{
+              todos: buildHref({ periodo: "todos" }),
+              hoje: buildHref({ periodo: "hoje" }),
+              "7d": buildHref({ periodo: "7d" }),
+              "30d": buildHref({ periodo: "30d" }),
+            }}
+            hrefLimpar={buildHref({ de: "", ate: "" })}
+            hiddenInputs={[
+              ...(statusFilter !== "todos"
+                ? [{ name: "status", value: statusFilter }]
+                : []),
+              ...(caioFilter !== "todos"
+                ? [{ name: "caio", value: caioFilter }]
+                : []),
+              ...(searchQuery ? [{ name: "q", value: searchQuery }] : []),
+            ]}
+          />
           <a
             href={buildExportHref()}
-            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-white border border-cinza-claro hover:border-laranja text-preto font-heading font-semibold text-sm transition"
+            className="inline-flex items-center px-3 py-2.5 rounded-lg bg-white border border-cinza-claro hover:border-laranja text-preto font-heading font-semibold text-sm transition"
           >
             ⬇ CSV
           </a>
         </div>
       </div>
 
-      {/* Status + Caio numa linha */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <FilterChip
-          label="Todos"
-          count={contagens.todos}
-          active={statusFilter === "todos"}
-          href={buildHref({ status: "todos" })}
-          variant="subtle"
-        />
-        {(Object.keys(STATUS_CONFIG) as StatusLead[])
-          .sort((a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem)
-          .map((status) => (
-            <FilterChip
-              key={status}
-              label={STATUS_CONFIG[status].label}
-              count={contagens[status] ?? 0}
-              active={statusFilter === status}
-              href={buildHref({ status })}
-              variant="subtle"
-            />
-          ))}
-        <div className="w-px h-5 bg-cinza-claro mx-1 self-center" />
-        <FilterChip
-          label="🟢 Caio on"
-          count={contagens.caio_on}
-          active={caioFilter === "on"}
-          href={buildHref({ caio: "on" })}
-          variant="subtle"
-        />
-        <FilterChip
-          label="🔴 Caio off"
-          count={contagens.caio_off}
-          active={caioFilter === "off"}
-          href={buildHref({ caio: "off" })}
-          variant="subtle"
-        />
-      </div>
-
-      {/* Periodo: chips + custom inline */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-5">
-        <span className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mr-1">
-          Período:
-        </span>
-        {(["todos", "hoje", "7d", "30d"] as Periodo[]).map((p) => (
+      {/* Status — só na view lista (no kanban as colunas já são por status) */}
+      {view === "lista" && (
+        <div className="flex items-stretch gap-2 mb-4">
           <FilterChip
-            key={p}
-            label={
-              p === "todos"
-                ? "Tudo"
-                : p === "hoje"
-                  ? "Hoje"
-                  : p === "7d"
-                    ? "7d"
-                    : "30d"
-            }
-            active={periodo === p && !de && !ate}
-            href={buildHref({ periodo: p })}
-            variant="subtle"
+            label="Todos"
+            count={contagens.todos}
+            active={statusFilter === "todos"}
+            href={buildHref({ status: "todos" })}
           />
-        ))}
-        <div className="w-px h-5 bg-cinza-claro mx-1 self-center" />
-        <form
-          method="get"
-          action="/dashboard/leads"
-          className="flex items-center gap-1.5"
-        >
-          {statusFilter !== "todos" && (
-            <input type="hidden" name="status" value={statusFilter} />
-          )}
-          {caioFilter !== "todos" && (
-            <input type="hidden" name="caio" value={caioFilter} />
-          )}
-          {searchQuery && <input type="hidden" name="q" value={searchQuery} />}
-          <input
-            type="date"
-            name="de"
-            defaultValue={de}
-            className="px-2 py-1 text-xs border border-cinza-claro rounded-md bg-white text-preto focus:outline-none focus:border-laranja transition"
-          />
-          <span className="text-xs text-cinza-medio">→</span>
-          <input
-            type="date"
-            name="ate"
-            defaultValue={ate}
-            className="px-2 py-1 text-xs border border-cinza-claro rounded-md bg-white text-preto focus:outline-none focus:border-laranja transition"
-          />
-          <button
-            type="submit"
-            className="px-2 py-1 text-xs font-heading font-semibold bg-preto text-white rounded-md hover:opacity-90 transition"
-          >
-            OK
-          </button>
-          {(de || ate) && (
-            <Link
-              href={buildHref({ de: "", ate: "" })}
-              className="px-1.5 py-1 text-xs text-cinza-medio hover:text-preto transition"
-              title="Limpar período"
-            >
-              ✕
-            </Link>
-          )}
-        </form>
-      </div>
+          {(Object.keys(STATUS_CONFIG) as StatusLead[])
+            .sort((a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem)
+            .map((status) => (
+              <FilterChip
+                key={status}
+                label={STATUS_CONFIG[status].label}
+                count={contagens[status] ?? 0}
+                active={statusFilter === status}
+                href={buildHref({ status })}
+              />
+            ))}
+        </div>
+      )}
+
+      {/* margem extra antes da tabela */}
+      <div className="mb-3" />
 
       {/* Erro */}
       {error && (
@@ -339,6 +427,8 @@ export default async function LeadsPage({
               : "Nenhum lead com os filtros atuais."
           }
         />
+      ) : view === "kanban" ? (
+        <KanbanDrag leads={leads} />
       ) : (
         <>
           <div className="bg-white rounded-2xl border border-cinza-claro">
@@ -562,20 +652,20 @@ function FilterChip({
   variant?: "default" | "subtle";
 }) {
   const baseSize =
-    variant === "subtle" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
+    variant === "subtle" ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm";
   return (
     <Link
       href={href}
-      className={`inline-flex items-center gap-2 rounded-full font-heading font-medium transition ${baseSize} ${
+      className={`flex-1 inline-flex items-center justify-center gap-2 rounded-full font-heading font-medium transition whitespace-nowrap ${baseSize} ${
         active
           ? "bg-preto text-white"
           : "bg-white text-cinza-medio border border-cinza-claro hover:border-laranja hover:text-preto"
       }`}
     >
-      {label}
+      <span>{label}</span>
       {count !== undefined && (
         <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${
             active ? "bg-white/20" : "bg-cinza-claro"
           }`}
         >
