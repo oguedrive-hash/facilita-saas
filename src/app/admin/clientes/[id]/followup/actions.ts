@@ -7,6 +7,7 @@ export type FollowupRegra = {
   nivel: number;
   esperar_dias: number;
   esperar_horas: number;
+  esperar_minutos: number;
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
@@ -54,6 +55,7 @@ export async function salvarFollowupConfig(
       nivel: i + 1,
       esperar_dias: Math.round(clamp(r.esperar_dias ?? 0, 0, 365)),
       esperar_horas: Math.round(clamp(r.esperar_horas ?? 0, 0, 24)),
+      esperar_minutos: Math.round(clamp(r.esperar_minutos ?? 0, 0, 59)),
       mensagem: r.mensagem.trim(),
       usa_ia: !!r.usa_ia,
       ativo: r.ativo !== false,

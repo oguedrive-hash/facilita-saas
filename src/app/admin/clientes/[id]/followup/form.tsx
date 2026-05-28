@@ -12,6 +12,7 @@ const DEFAULT_REGRA: FollowupRegra = {
   nivel: 1,
   esperar_dias: 1,
   esperar_horas: 0,
+  esperar_minutos: 0,
   mensagem: "",
   usa_ia: false,
   ativo: true,
@@ -300,36 +301,50 @@ function RegraCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
-            Dias após {referencia}
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={365}
-            value={regra.esperar_dias}
-            onChange={(e) =>
-              onChange({ esperar_dias: parseInt(e.target.value, 10) || 0 })
-            }
-            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
-            Horas adicionais
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={regra.esperar_horas}
-            onChange={(e) =>
-              onChange({ esperar_horas: parseInt(e.target.value, 10) || 0 })
-            }
-            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
-          />
+      <div className="mb-3">
+        <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+          Esperar após {referencia}
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={regra.esperar_dias}
+              onChange={(e) =>
+                onChange({ esperar_dias: parseInt(e.target.value, 10) || 0 })
+              }
+              className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+            />
+            <span className="text-xs text-cinza-medio">dias</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={regra.esperar_horas}
+              onChange={(e) =>
+                onChange({ esperar_horas: parseInt(e.target.value, 10) || 0 })
+              }
+              className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+            />
+            <span className="text-xs text-cinza-medio">h</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={59}
+              value={regra.esperar_minutos}
+              onChange={(e) =>
+                onChange({ esperar_minutos: parseInt(e.target.value, 10) || 0 })
+              }
+              className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+            />
+            <span className="text-xs text-cinza-medio">min</span>
+          </div>
         </div>
       </div>
 

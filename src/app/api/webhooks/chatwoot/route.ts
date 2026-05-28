@@ -342,6 +342,7 @@ async function agendarPrimeiroFollowup(
           nivel: number;
           esperar_dias: number;
           esperar_horas: number;
+          esperar_minutos: number;
           ativo: boolean;
         }[];
       }
@@ -353,6 +354,9 @@ async function agendarPrimeiroFollowup(
   const proximoEm = new Date();
   proximoEm.setDate(proximoEm.getDate() + (primeiraRegra.esperar_dias ?? 0));
   proximoEm.setHours(proximoEm.getHours() + (primeiraRegra.esperar_horas ?? 0));
+  proximoEm.setMinutes(
+    proximoEm.getMinutes() + (primeiraRegra.esperar_minutos ?? 0),
+  );
 
   await supabase
     .from("leads")

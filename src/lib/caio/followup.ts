@@ -22,6 +22,7 @@ type Regra = {
   nivel: number;
   esperar_dias: number;
   esperar_horas: number;
+  esperar_minutos: number;
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
@@ -59,10 +60,15 @@ function aplicarTemplate(msg: string, lead: LeadProcess): string {
   return msg.replace(/\{nome\}/g, nome);
 }
 
-function calcularProximoEm(dias: number, horas: number): Date {
+function calcularProximoEm(
+  dias: number,
+  horas: number,
+  minutos: number,
+): Date {
   const d = new Date();
   d.setDate(d.getDate() + dias);
   d.setHours(d.getHours() + horas);
+  d.setMinutes(d.getMinutes() + minutos);
   return d;
 }
 
@@ -134,7 +140,11 @@ export async function processarFollowupLead(
   // Atualiza tracking — proximo agendamento ou termino do ciclo
   const proximaRegra = regrasAtivas.find((r) => r.nivel === proximoNivel + 1);
   const proximoEm = proximaRegra
-    ? calcularProximoEm(proximaRegra.esperar_dias, proximaRegra.esperar_horas)
+    ? calcularProximoEm(
+        proximaRegra.esperar_dias,
+        proximaRegra.esperar_horas,
+        proximaRegra.esperar_minutos ?? 0,
+      )
     : null;
 
   const update: Record<string, unknown> = {
