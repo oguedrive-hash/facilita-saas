@@ -25,10 +25,26 @@ export type FollowupConfig = {
   reativacao: FollowupReativacao;
 };
 
+export type LembreteReuniaoRegra = {
+  nivel: number;
+  quando: "antes" | "depois";
+  tempo_dias: number;
+  tempo_horas: number;
+  tempo_minutos: number;
+  mensagem: string;
+  usa_ia: boolean;
+  ativo: boolean;
+};
+
+export type LembreteReuniaoConfig = {
+  regras: LembreteReuniaoRegra[];
+};
+
 export async function salvarFollowupConfig(
   organizationId: string,
   config: FollowupConfig,
   mudarStatusAPartir: number,
+  lembreteConfig: LembreteReuniaoConfig,
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
 
@@ -75,11 +91,26 @@ export async function salvarFollowupConfig(
     clamp(mudarStatusAPartir ?? 1, 1, Math.max(1, regrasLimpas.length)),
   );
 
+  // Sanitiza regras de lembrete de reuniao — renumera niveis
+  const lembretesLimpos = (lembreteConfig?.regras ?? [])
+    .filter((r) => r.mensagem?.trim().length > 0)
+    .map((r, i) => ({
+      nivel: i + 1,
+      quando: r.quando === "depois" ? "depois" : "antes",
+      tempo_dias: Math.round(clamp(r.tempo_dias ?? 0, 0, 30)),
+      tempo_horas: Math.round(clamp(r.tempo_horas ?? 0, 0, 24)),
+      tempo_minutos: Math.round(clamp(r.tempo_minutos ?? 0, 0, 59)),
+      mensagem: r.mensagem.trim(),
+      usa_ia: !!r.usa_ia,
+      ativo: r.ativo !== false,
+    }));
+
   const { error } = await supabase
     .from("organizations")
     .update({
       followup_config: { regras: regrasLimpas, reativacao: reativacaoLimpa },
       followup_mudar_status_a_partir: mudarSanitizado,
+      lembrete_reuniao_config: { regras: lembretesLimpos },
     })
     .eq("id", organizationId);
 

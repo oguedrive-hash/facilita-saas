@@ -13,7 +13,9 @@ export default async function FollowupPage({
 
   const { data: cliente, error } = await supabase
     .from("organizations")
-    .select("id, name, followup_config, followup_mudar_status_a_partir")
+    .select(
+      "id, name, followup_config, followup_mudar_status_a_partir, lembrete_reuniao_config",
+    )
     .eq("id", id)
     .single();
 
@@ -46,6 +48,7 @@ export default async function FollowupPage({
           mudarStatusAPartirInicial={
             cliente.followup_mudar_status_a_partir ?? 1
           }
+          lembreteConfigInicial={cliente.lembrete_reuniao_config}
         />
       </div>
     </div>

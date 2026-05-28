@@ -6,6 +6,8 @@ import {
   type FollowupConfig,
   type FollowupRegra,
   type FollowupReativacao,
+  type LembreteReuniaoConfig,
+  type LembreteReuniaoRegra,
 } from "./actions";
 
 const DEFAULT_REGRA: FollowupRegra = {
@@ -25,14 +27,27 @@ const DEFAULT_REATIVACAO: FollowupReativacao = {
   usa_ia: true,
 };
 
+const DEFAULT_LEMBRETE: LembreteReuniaoRegra = {
+  nivel: 1,
+  quando: "antes",
+  tempo_dias: 0,
+  tempo_horas: 1,
+  tempo_minutos: 0,
+  mensagem: "",
+  usa_ia: false,
+  ativo: true,
+};
+
 export function FollowupEditor({
   organizationId,
   configInicial,
   mudarStatusAPartirInicial,
+  lembreteConfigInicial,
 }: {
   organizationId: string;
   configInicial: FollowupConfig | null;
   mudarStatusAPartirInicial: number;
+  lembreteConfigInicial: LembreteReuniaoConfig | null;
 }) {
   const [regras, setRegras] = useState<FollowupRegra[]>(
     configInicial?.regras ?? [],
@@ -42,6 +57,9 @@ export function FollowupEditor({
   );
   const [mudarStatusAPartir, setMudarStatusAPartir] = useState(
     mudarStatusAPartirInicial,
+  );
+  const [lembretes, setLembretes] = useState<LembreteReuniaoRegra[]>(
+    lembreteConfigInicial?.regras ?? [],
   );
   const [pending, startTransition] = useTransition();
   const [salvouAgora, setSalvouAgora] = useState(false);
@@ -69,6 +87,18 @@ export function FollowupEditor({
     setRegras((r) => r.map((reg, i) => (i === idx ? { ...reg, ...patch } : reg)));
   }
 
+  function adicionarLembrete() {
+    setLembretes((l) => [...l, { ...DEFAULT_LEMBRETE, nivel: l.length + 1 }]);
+  }
+  function removerLembrete(idx: number) {
+    setLembretes((l) => l.filter((_, i) => i !== idx));
+  }
+  function atualizarLembrete(idx: number, patch: Partial<LembreteReuniaoRegra>) {
+    setLembretes((l) =>
+      l.map((reg, i) => (i === idx ? { ...reg, ...patch } : reg)),
+    );
+  }
+
   function salvar() {
     setErro(null);
     startTransition(async () => {
@@ -76,6 +106,7 @@ export function FollowupEditor({
         organizationId,
         { regras, reativacao },
         mudarStatusAPartir,
+        { regras: lembretes },
       );
       if ("error" in result) {
         setErro(result.error);
@@ -236,6 +267,52 @@ export function FollowupEditor({
             </label>
           </div>
         )}
+      </section>
+
+      {/* Seção 3: Lembretes de reunião agendada */}
+      <section className="pt-6 border-t border-cinza-claro">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-heading font-bold text-preto">
+              Lembretes de reunião agendada
+            </h3>
+            <p className="text-xs text-cinza-medio mt-1">
+              Quando um lead tem reunião agendada, dispara lembretes antes ou
+              depois da data marcada. Cada regra tem timestamp próprio
+              relativo ao agendamento.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={adicionarLembrete}
+            className="px-3 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white font-heading font-semibold text-sm transition"
+          >
+            + Adicionar lembrete
+          </button>
+        </div>
+
+        {lembretes.length === 0 ? (
+          <p className="text-sm text-cinza-medio text-center py-8 bg-offwhite rounded-lg border border-cinza-claro">
+            Nenhum lembrete. Reuniões agendadas não vão ter aviso automático.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {lembretes.map((reg, idx) => (
+              <LembreteCard
+                key={idx}
+                regra={reg}
+                idx={idx}
+                onChange={(patch) => atualizarLembrete(idx, patch)}
+                onRemove={() => removerLembrete(idx)}
+              />
+            ))}
+          </div>
+        )}
+
+        <p className="text-[10px] text-cinza-medio mt-3">
+          Placeholders disponíveis: {"{nome}"}, {"{hora}"}, {"{data}"},{" "}
+          {"{meet_link}"}
+        </p>
       </section>
 
       {/* Footer */}
@@ -404,6 +481,132 @@ function RegraCard({
           <span className="text-xs text-preto">
             Personalizar com IA (Caio adapta ao histórico do lead)
           </span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={regra.ativo}
+            onChange={(e) => onChange({ ativo: e.target.checked })}
+            className="w-4 h-4 rounded text-laranja focus:ring-laranja"
+          />
+          <span className="text-xs text-preto">Ativa</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function LembreteCard({
+  regra,
+  idx,
+  onChange,
+  onRemove,
+}: {
+  regra: LembreteReuniaoRegra;
+  idx: number;
+  onChange: (patch: Partial<LembreteReuniaoRegra>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="p-4 rounded-lg border border-cinza-claro bg-white">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-laranja text-white font-heading font-bold text-sm">
+            {idx + 1}
+          </span>
+          <span className="text-sm font-heading font-semibold text-preto">
+            Lembrete nº{idx + 1}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1.5 text-cinza-medio hover:text-red-600 transition"
+          title="Remover"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2 mb-3 items-end">
+        <div>
+          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+            Quando
+          </label>
+          <select
+            value={regra.quando}
+            onChange={(e) =>
+              onChange({ quando: e.target.value as "antes" | "depois" })
+            }
+            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+          >
+            <option value="antes">Antes da reunião</option>
+            <option value="depois">Depois da reunião</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={regra.tempo_dias}
+            onChange={(e) =>
+              onChange({ tempo_dias: parseInt(e.target.value, 10) || 0 })
+            }
+            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+          />
+          <span className="text-xs text-cinza-medio">dias</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={23}
+            value={regra.tempo_horas}
+            onChange={(e) =>
+              onChange({ tempo_horas: parseInt(e.target.value, 10) || 0 })
+            }
+            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+          />
+          <span className="text-xs text-cinza-medio">h</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={59}
+            value={regra.tempo_minutos}
+            onChange={(e) =>
+              onChange({ tempo_minutos: parseInt(e.target.value, 10) || 0 })
+            }
+            className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition text-sm"
+          />
+          <span className="text-xs text-cinza-medio">min</span>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+          Mensagem
+        </label>
+        <textarea
+          rows={2}
+          value={regra.mensagem}
+          onChange={(e) => onChange({ mensagem: e.target.value })}
+          placeholder="Ex: Oi {nome}, sua reunião é {data} às {hora}. Link: {meet_link}"
+          className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition text-sm"
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={regra.usa_ia}
+            onChange={(e) => onChange({ usa_ia: e.target.checked })}
+            className="w-4 h-4 rounded text-laranja focus:ring-laranja"
+          />
+          <span className="text-xs text-preto">Personalizar com IA</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
