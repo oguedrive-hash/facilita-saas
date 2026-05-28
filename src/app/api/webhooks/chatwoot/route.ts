@@ -127,24 +127,30 @@ async function agendarRespostaCaioComDebounce(
 
   // Marca o "previsto para" — esse timestamp e o ID desse ciclo de debounce.
   // Se outra msg chegar e reescrever, esse ciclo perdeu e vai desistir.
-  const meuPrevisto = new Date(Date.now() + debounceMs).toISOString();
+  const meuPrevistoMs = Date.now() + debounceMs;
+  const meuPrevistoIso = new Date(meuPrevistoMs).toISOString();
   await supabase
     .from("leads")
-    .update({ caio_responder_em: meuPrevisto })
+    .update({ caio_responder_em: meuPrevistoIso })
     .eq("id", leadId);
 
   // Aguarda o debounce
   await new Promise((r) => setTimeout(r, debounceMs));
 
-  // Re-checa: ainda sou o vencedor? Se outra msg reagendou pra mais tarde,
-  // caio_responder_em vai ser != do meu, e eu desisto.
+  // Re-checa: ainda sou o vencedor? Compara como timestamp em ms (o formato
+  // de string que volta do Postgres difere do que mandei — +00:00 vs Z).
   const { data: lead } = await supabase
     .from("leads")
     .select("caio_responder_em")
     .eq("id", leadId)
     .single();
 
-  if (!lead || lead.caio_responder_em !== meuPrevisto) {
+  if (!lead?.caio_responder_em) {
+    console.log("[caio:debounce] flag limpo, desistindo", leadId);
+    return;
+  }
+  const atualMs = new Date(lead.caio_responder_em).getTime();
+  if (atualMs !== meuPrevistoMs) {
     console.log("[caio:debounce] reagendado, desistindo", leadId);
     return;
   }
