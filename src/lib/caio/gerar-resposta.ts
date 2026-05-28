@@ -1,6 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
-import { CAIO_SYSTEM_PROMPT } from "./system-prompt";
 
 /**
  * Gera uma resposta como Caio responderia, baseado no histórico do lead.
@@ -37,16 +36,21 @@ export async function gerarRespostaCaio(opts: {
     return { error: "Lead sem mensagens" };
   }
 
-  // Busca prompt customizado da org (fallback pro hardcoded da Facilita)
-  let promptBase = CAIO_SYSTEM_PROMPT;
-  if (lead?.organization_id) {
-    const { data: org } = await supabase
-      .from("organizations")
-      .select("prompt_system")
-      .eq("id", lead.organization_id)
-      .single();
-    if (org?.prompt_system?.trim()) promptBase = org.prompt_system;
+  // Prompt vem exclusivamente da organization — sem fallback hardcoded.
+  if (!lead?.organization_id) {
+    return { error: "Lead sem organization vinculada" };
   }
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("prompt_system")
+    .eq("id", lead.organization_id)
+    .single();
+  if (!org?.prompt_system?.trim()) {
+    return {
+      error: "Organization sem prompt_system configurado — configure no painel",
+    };
+  }
+  const promptBase = org.prompt_system;
 
   const historico: ChatMessage[] = mensagens.map((m) => {
     let content: string;
