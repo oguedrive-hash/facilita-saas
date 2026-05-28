@@ -16,6 +16,7 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
   const router = useRouter();
 
   useEffect(() => {
+    console.log("[rt] mount", leadId, process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabase = createClient();
 
     const channel = supabase
@@ -28,7 +29,10 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
           table: "mensagens",
           filter: `lead_id=eq.${leadId}`,
         },
-        () => router.refresh(),
+        (payload) => {
+          console.log("[rt] msg event", payload.eventType);
+          router.refresh();
+        },
       )
       .on(
         "postgres_changes",
@@ -38,11 +42,17 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
           table: "leads",
           filter: `id=eq.${leadId}`,
         },
-        () => router.refresh(),
+        (payload) => {
+          console.log("[rt] lead event", payload.eventType);
+          router.refresh();
+        },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log("[rt] status", status, err ?? "");
+      });
 
     return () => {
+      console.log("[rt] unmount");
       supabase.removeChannel(channel);
     };
   }, [leadId, router]);
