@@ -15,6 +15,8 @@ type FilterParams = {
   caio?: CaioFilter;
   q?: string;
   periodo?: Periodo;
+  de?: string;
+  ate?: string;
   sort?: SortField;
   order?: SortOrder;
   page?: string;
@@ -49,6 +51,8 @@ export default async function LeadsPage({
   const caioFilter = params.caio ?? "todos";
   const searchQuery = params.q ?? "";
   const periodo = params.periodo ?? "todos";
+  const de = params.de ?? "";
+  const ate = params.ate ?? "";
   const sortField = params.sort ?? "updated_at";
   const sortOrder = params.order ?? "desc";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
@@ -74,8 +78,19 @@ export default async function LeadsPage({
     const q = searchQuery.trim().replace(/[%_]/g, "");
     query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
   }
-  const desde = calcularDesde(periodo);
-  if (desde) query = query.gte("created_at", desde);
+  // Data customizada tem prioridade sobre chip de periodo
+  if (de) {
+    query = query.gte("created_at", new Date(de).toISOString());
+  } else {
+    const desde = calcularDesde(periodo);
+    if (desde) query = query.gte("created_at", desde);
+  }
+  if (ate) {
+    // Inclui o dia inteiro do "ate" (até 23:59:59.999)
+    const ateData = new Date(ate);
+    ateData.setHours(23, 59, 59, 999);
+    query = query.lte("created_at", ateData.toISOString());
+  }
 
   // Paraleliza lista + contagens globais (pros chips de filtro)
   const [{ data: leads, error, count: totalLeads }, { data: contagensRaw }] =
@@ -103,6 +118,12 @@ export default async function LeadsPage({
     const c = opts.caio ?? caioFilter;
     const qq = opts.q ?? searchQuery;
     const p = opts.periodo ?? periodo;
+    // Se selecionou chip de periodo, limpa as datas custom (e vice-versa)
+    const usandoChip = opts.periodo !== undefined;
+    const usandoCustom = opts.de !== undefined || opts.ate !== undefined;
+    const d = usandoChip ? "" : (opts.de ?? de);
+    const a = usandoChip ? "" : (opts.ate ?? ate);
+    const pEffective = usandoCustom ? "todos" : p;
     const sf = opts.sort ?? sortField;
     const so = opts.order ?? sortOrder;
     // Quando muda filtro, volta pra page 1
@@ -110,7 +131,9 @@ export default async function LeadsPage({
     if (s !== "todos") sp.set("status", s);
     if (c !== "todos") sp.set("caio", c);
     if (qq) sp.set("q", qq);
-    if (p !== "todos") sp.set("periodo", p);
+    if (pEffective !== "todos") sp.set("periodo", pEffective);
+    if (d) sp.set("de", d);
+    if (a) sp.set("ate", a);
     if (sf !== "updated_at") sp.set("sort", sf);
     if (so !== "desc") sp.set("order", so);
     if (pg !== "1") sp.set("page", pg);
@@ -124,6 +147,8 @@ export default async function LeadsPage({
     if (caioFilter !== "todos") sp.set("caio", caioFilter);
     if (searchQuery) sp.set("q", searchQuery);
     if (periodo !== "todos") sp.set("periodo", periodo);
+    if (de) sp.set("de", de);
+    if (ate) sp.set("ate", ate);
     if (sortField !== "updated_at") sp.set("sort", sortField);
     if (sortOrder !== "desc") sp.set("order", sortOrder);
     const qs = sp.toString();
@@ -240,12 +265,63 @@ export default async function LeadsPage({
                     ? "Últimos 7 dias"
                     : "Últimos 30 dias"
             }
-            active={periodo === p}
+            active={periodo === p && !de && !ate}
             href={buildHref({ periodo: p })}
             variant="subtle"
           />
         ))}
       </div>
+
+      {/* Período customizado */}
+      <form
+        method="get"
+        action="/dashboard/leads"
+        className="flex flex-wrap items-end gap-2 mb-6 p-3 bg-offwhite rounded-lg border border-cinza-claro"
+      >
+        {statusFilter !== "todos" && (
+          <input type="hidden" name="status" value={statusFilter} />
+        )}
+        {caioFilter !== "todos" && (
+          <input type="hidden" name="caio" value={caioFilter} />
+        )}
+        {searchQuery && <input type="hidden" name="q" value={searchQuery} />}
+        <div>
+          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+            Data início
+          </label>
+          <input
+            type="date"
+            name="de"
+            defaultValue={de}
+            className="px-3 py-1.5 text-sm border border-cinza-claro rounded-lg bg-white text-preto focus:outline-none focus:border-laranja transition"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+            Data fim
+          </label>
+          <input
+            type="date"
+            name="ate"
+            defaultValue={ate}
+            className="px-3 py-1.5 text-sm border border-cinza-claro rounded-lg bg-white text-preto focus:outline-none focus:border-laranja transition"
+          />
+        </div>
+        <button
+          type="submit"
+          className="px-3 py-1.5 text-sm font-heading font-semibold bg-preto text-white rounded-lg hover:opacity-90 transition"
+        >
+          Aplicar
+        </button>
+        {(de || ate) && (
+          <Link
+            href={buildHref({ de: "", ate: "" })}
+            className="px-3 py-1.5 text-sm text-cinza-medio hover:text-preto transition"
+          >
+            Limpar período
+          </Link>
+        )}
+      </form>
 
       {/* Erro */}
       {error && (

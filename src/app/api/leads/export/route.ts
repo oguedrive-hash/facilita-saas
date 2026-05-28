@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
   const caioFilter = sp.get("caio") ?? "todos";
   const searchQuery = sp.get("q") ?? "";
   const periodo = (sp.get("periodo") ?? "todos") as Periodo;
+  const de = sp.get("de") ?? "";
+  const ate = sp.get("ate") ?? "";
   const sortField = sp.get("sort") ?? "updated_at";
   const sortOrder = (sp.get("order") ?? "desc") === "asc";
 
@@ -62,8 +64,17 @@ export async function GET(request: NextRequest) {
     const q = searchQuery.trim().replace(/[%_]/g, "");
     query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
   }
-  const desde = calcularDesde(periodo);
-  if (desde) query = query.gte("created_at", desde);
+  if (de) {
+    query = query.gte("created_at", new Date(de).toISOString());
+  } else {
+    const desde = calcularDesde(periodo);
+    if (desde) query = query.gte("created_at", desde);
+  }
+  if (ate) {
+    const ateData = new Date(ate);
+    ateData.setHours(23, 59, 59, 999);
+    query = query.lte("created_at", ateData.toISOString());
+  }
 
   const { data: leads, error } = await query;
   if (error) {
