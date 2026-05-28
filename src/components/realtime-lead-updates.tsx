@@ -16,44 +16,46 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
   const router = useRouter();
 
   useEffect(() => {
-    console.log("[rt] mount", leadId, process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    const channel = supabase
-      .channel(`lead-${leadId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "mensagens",
-          filter: `lead_id=eq.${leadId}`,
-        },
-        (payload) => {
-          console.log("[rt] msg event", payload.eventType);
-          router.refresh();
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "leads",
-          filter: `id=eq.${leadId}`,
-        },
-        (payload) => {
-          console.log("[rt] lead event", payload.eventType);
-          router.refresh();
-        },
-      )
-      .subscribe((status, err) => {
-        console.log("[rt] status", status, err ?? "");
-      });
+    // Propaga JWT do user autenticado pro Realtime — sem isso o canal
+    // conecta como anon e a RLS bloqueia os eventos (is_admin() = false).
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        supabase.realtime.setAuth(session.access_token);
+      }
+
+      channel = supabase
+        .channel(`lead-${leadId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "mensagens",
+            filter: `lead_id=eq.${leadId}`,
+          },
+          () => router.refresh(),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "leads",
+            filter: `id=eq.${leadId}`,
+          },
+          () => router.refresh(),
+        )
+        .subscribe();
+    })();
 
     return () => {
-      console.log("[rt] unmount");
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [leadId, router]);
 
