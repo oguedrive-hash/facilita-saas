@@ -8,6 +8,7 @@ import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
 import { ToggleCaio } from "@/components/toggle-caio";
 import { ToggleFollowup } from "@/components/toggle-followup";
 import { NavegacaoLeads } from "@/components/navegacao-leads";
+import { TimelineEventos } from "@/components/timeline-eventos";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
@@ -28,6 +29,7 @@ export default async function LeadDetalhePage({
     { data: agendamentos },
     { data: mensagens },
     { data: idsLeads },
+    { data: eventos },
   ] = await Promise.all([
     supabase.from("leads").select("*").eq("id", id).single(),
     supabase
@@ -48,6 +50,13 @@ export default async function LeadDetalhePage({
       .select("id")
       .order("updated_at", { ascending: false })
       .limit(500),
+    // Timeline de eventos do lead (últimos 50)
+    supabase
+      .from("lead_eventos")
+      .select("id, tipo, descricao, autor_nome, created_at")
+      .eq("lead_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
   if (error || !lead) {
@@ -225,6 +234,10 @@ export default async function LeadDetalhePage({
 
           <Card titulo="Notas internas">
             <NotasLead leadId={lead.id} notasIniciais={lead.notas ?? null} />
+          </Card>
+
+          <Card titulo="Histórico">
+            <TimelineEventos eventos={eventos ?? []} />
           </Card>
 
           <Card titulo="Detalhes">

@@ -17,6 +17,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { logarEvento } from "@/lib/caio/eventos";
 
 type Regra = {
   nivel: number;
@@ -181,6 +182,15 @@ export async function processarFollowupLead(
 
   await supabase.from("leads").update(update).eq("id", lead.id);
 
+  await logarEvento({
+    leadId: lead.id,
+    organizationId: lead.organization_id,
+    tipo: "followup_enviado",
+    descricao: `Follow-up nº${proximoNivel} enviado${regra.usa_ia ? " (gerado por IA)" : ""}`,
+    autorNome: "Caio (automático)",
+    meta: { nivel: proximoNivel, usa_ia: regra.usa_ia },
+  });
+
   return { ok: true, acao: "followup" };
 }
 
@@ -231,6 +241,14 @@ async function processarFimRegras(
       status: "perdido",
     })
     .eq("id", lead.id);
+
+  await logarEvento({
+    leadId: lead.id,
+    organizationId: lead.organization_id,
+    tipo: "reativacao_enviada",
+    descricao: "Mensagem de reativação enviada — lead marcado como perdido",
+    autorNome: "Caio (automático)",
+  });
 
   return { ok: true, acao: "reativacao" };
 }

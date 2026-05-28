@@ -10,6 +10,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { logarEvento } from "@/lib/caio/eventos";
 
 type RegraLembrete = {
   nivel: number;
@@ -177,6 +178,15 @@ export async function processarLembretesPendentes(): Promise<{
         .eq("id", ag.id);
       enviadosCount++;
       console.log("[lembrete:cron]", ag.id, `nivel ${regra.nivel} enviado`);
+
+      await logarEvento({
+        leadId: ag.lead_id,
+        organizationId: ag.organization_id,
+        tipo: "lembrete_enviado",
+        descricao: `Lembrete de reunião nº${regra.nivel} enviado (${regra.quando})`,
+        autorNome: "Caio (automático)",
+        meta: { nivel: regra.nivel, agendamento_id: ag.id },
+      });
     }
   }
 

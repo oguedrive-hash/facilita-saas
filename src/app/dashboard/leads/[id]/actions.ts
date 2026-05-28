@@ -13,7 +13,8 @@ import {
 import { chatCompletion, transcreverAudio } from "@/lib/caio/openai";
 import { RESUMO_PROMPT } from "@/lib/caio/system-prompt";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
-import type { StatusLead } from "@/lib/status-config";
+import { logarEvento } from "@/lib/caio/eventos";
+import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 const AGENTE_OFF = "agente-off";
 
@@ -99,6 +100,20 @@ export async function responderLead(formData: FormData): Promise<
     privada: false,
   });
 
+  // Loga evento
+  const {
+    data: { user: userMsg },
+  } = await supabase.auth.getUser();
+  await logarEvento({
+    leadId,
+    organizationId: lead.organization_id,
+    tipo: "msg_painel",
+    descricao: `Resposta manual enviada${desligarCaio ? " e Caio desligado" : ""}`,
+    autorId: userMsg?.id ?? null,
+    autorNome: userMsg?.email ?? null,
+    meta: { conteudo: conteudo.trim().slice(0, 200) },
+  });
+
   revalidatePath(`/dashboard/leads/${leadId}`);
   return { ok: true };
 }
@@ -152,6 +167,26 @@ export async function toggleCaio(formData: FormData): Promise<
     .update({ caio_ativo: temAgenteOff })
     .eq("id", leadId);
 
+  // Loga evento
+  const { data: leadOrg } = await admin
+    .from("leads")
+    .select("organization_id")
+    .eq("id", leadId)
+    .single();
+  const {
+    data: { user: userToggle },
+  } = await supabase.auth.getUser();
+  if (leadOrg?.organization_id) {
+    await logarEvento({
+      leadId,
+      organizationId: leadOrg.organization_id,
+      tipo: "caio_toggle",
+      descricao: temAgenteOff ? "Caio reativado" : "Caio desligado (humano assumiu)",
+      autorId: userToggle?.id ?? null,
+      autorNome: userToggle?.email ?? null,
+    });
+  }
+
   revalidatePath(`/dashboard/leads/${leadId}`);
   revalidatePath("/dashboard/leads");
   // ativo = caio respondendo = NÃO tem agente-off (depois da troca)
@@ -185,9 +220,12 @@ export async function mudarStatusLead(formData: FormData): Promise<
   }
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data: lead, error } = await supabase
     .from("leads")
-    .select("id, status, chatwoot_conversation_id")
+    .select("id, status, organization_id, chatwoot_conversation_id")
     .eq("id", leadId)
     .single();
 
@@ -289,6 +327,19 @@ export async function mudarStatusLead(formData: FormData): Promise<
         status: "open",
       });
     }
+  }
+
+  // Loga evento (best effort — nao bloqueia se falhar)
+  if (statusNovo !== statusAntigo) {
+    await logarEvento({
+      leadId,
+      organizationId: lead.organization_id,
+      tipo: "status_mudou",
+      descricao: `Status mudou de "${STATUS_CONFIG[statusAntigo]?.label ?? statusAntigo}" pra "${STATUS_CONFIG[statusNovo]?.label ?? statusNovo}"`,
+      autorId: user?.id ?? null,
+      autorNome: user?.email ?? null,
+      meta: { de: statusAntigo, para: statusNovo },
+    });
   }
 
   revalidatePath(`/dashboard/leads/${leadId}`);
@@ -637,6 +688,27 @@ export async function toggleFollowupAtivo(formData: FormData): Promise<
     .eq("id", leadId);
 
   if (error) return { error: error.message };
+
+  // Loga evento
+  const { data: leadOrg } = await admin
+    .from("leads")
+    .select("organization_id")
+    .eq("id", leadId)
+    .single();
+  const supabase = await createClient();
+  const {
+    data: { user: userFollow },
+  } = await supabase.auth.getUser();
+  if (leadOrg?.organization_id) {
+    await logarEvento({
+      leadId,
+      organizationId: leadOrg.organization_id,
+      tipo: "followup_toggle",
+      descricao: ativo ? "Follow-up ativado" : "Follow-up desativado",
+      autorId: userFollow?.id ?? null,
+      autorNome: userFollow?.email ?? null,
+    });
+  }
 
   revalidatePath(`/dashboard/leads/${leadId}`);
   return { ok: true };
