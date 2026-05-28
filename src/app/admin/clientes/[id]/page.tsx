@@ -65,12 +65,20 @@ export default async function ClienteDetalhePage({
               inadimplente={cliente.inadimplente}
             />
             <PlanoLabel plano={cliente.plano} />
-            <Link
-              href={`/admin/clientes/${cliente.id}/editar`}
-              className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold mt-2"
-            >
-              Editar →
-            </Link>
+            <div className="flex items-center gap-3 mt-2">
+              <Link
+                href={`/admin/clientes/${cliente.id}/followup`}
+                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+              >
+                Follow-up →
+              </Link>
+              <Link
+                href={`/admin/clientes/${cliente.id}/editar`}
+                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+              >
+                Editar →
+              </Link>
+            </div>
           </div>
         </div>
       </div>

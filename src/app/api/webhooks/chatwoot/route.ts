@@ -99,6 +99,19 @@ async function processWebhook(webhook: ChatwootWebhook) {
     `(${Date.now() - startedAt}ms)`,
   );
 
+  // Lead respondeu — zera o ciclo de follow-up e atualiza ultima_msg_lead_em.
+  // (Roda em paralelo com a geracao da resposta pra nao atrasar.)
+  if (leadsComIncomingNova.size > 0) {
+    await supabase
+      .from("leads")
+      .update({
+        numero_followup: 0,
+        proximo_followup_em: null,
+        ultima_msg_lead_em: new Date().toISOString(),
+      })
+      .in("id", Array.from(leadsComIncomingNova));
+  }
+
   // Pra cada lead com incoming nova: agenda resposta com debounce. Se chegar
   // outra msg desse lead dentro do debounce, o ciclo antigo desiste e o novo
   // assume — Caio so responde quando o lead realmente parou de digitar.
@@ -297,6 +310,8 @@ async function responderLeadAuto(
       lead.chatwoot_conversation_id,
       responderComAudio,
     );
+    // Caio respondeu — agenda o primeiro follow-up baseado na config da org
+    await agendarPrimeiroFollowup(supabase, organizationId, leadId);
   } finally {
     // Sempre limpa o flag, mesmo em erro — UI volta ao normal
     await supabase
@@ -304,6 +319,45 @@ async function responderLeadAuto(
       .update({ caio_processing_since: null })
       .eq("id", leadId);
   }
+}
+
+/**
+ * Depois que Caio responde, agenda o 1º follow-up segundo a config da org.
+ * Se a org nao tem followup_config ou nao tem regras ativas, nao agenda nada.
+ */
+async function agendarPrimeiroFollowup(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+) {
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("followup_config")
+    .eq("id", organizationId)
+    .single();
+
+  const config = org?.followup_config as
+    | {
+        regras?: {
+          nivel: number;
+          esperar_dias: number;
+          esperar_horas: number;
+          ativo: boolean;
+        }[];
+      }
+    | null
+    | undefined;
+  const primeiraRegra = config?.regras?.find((r) => r.ativo && r.nivel === 1);
+  if (!primeiraRegra) return;
+
+  const proximoEm = new Date();
+  proximoEm.setDate(proximoEm.getDate() + (primeiraRegra.esperar_dias ?? 0));
+  proximoEm.setHours(proximoEm.getHours() + (primeiraRegra.esperar_horas ?? 0));
+
+  await supabase
+    .from("leads")
+    .update({ proximo_followup_em: proximoEm.toISOString() })
+    .eq("id", leadId);
 }
 
 async function gerarERespondeCaio(
