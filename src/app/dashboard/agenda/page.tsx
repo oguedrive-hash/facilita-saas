@@ -1,16 +1,94 @@
+import { cookies } from "next/headers";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import Link from "next/link";
+import { CalendarioAgenda } from "@/components/calendario-agenda";
+import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
 
-export default async function AgendaPage() {
+type View = "lista" | "calendario";
+
+type LeadRef =
+  | { nome?: string | null; telefone?: string }
+  | { nome?: string | null; telefone?: string }[]
+  | null;
+
+type AgendamentoDB = {
+  id: string;
+  data_inicio: string;
+  data_fim?: string | null;
+  status: string;
+  meet_link?: string | null;
+  lead_id: string;
+  leads: LeadRef;
+};
+
+export default async function AgendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: View }>;
+}) {
+  const params = await searchParams;
+  const cookieStore = await cookies();
+  const viewSalva = cookieStore.get("agenda_view_preferida")?.value;
+  const view: View =
+    params.view === "calendario" || params.view === "lista"
+      ? params.view
+      : viewSalva === "calendario"
+        ? "calendario"
+        : "lista";
+
   const supabase = await createClient();
-
-  const agora = new Date().toISOString();
-  const trintaDiasAtras = new Date();
+  const agora = new Date();
+  const trintaDiasAtras = new Date(agora);
   trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
 
-  // Paraleliza as duas queries
+  if (view === "calendario") {
+    // Calendário: pega tudo do mês atual + adjacentes (janela ampla pra navegar)
+    const inicioJanela = new Date(agora);
+    inicioJanela.setMonth(inicioJanela.getMonth() - 2);
+    inicioJanela.setDate(1);
+    const fimJanela = new Date(agora);
+    fimJanela.setMonth(fimJanela.getMonth() + 3);
+
+    const { data: agendamentos } = await supabase
+      .from("agendamentos")
+      .select(
+        "id, data_inicio, status, lead_id, leads(nome, telefone)",
+      )
+      .gte("data_inicio", inicioJanela.toISOString())
+      .lte("data_inicio", fimJanela.toISOString())
+      .order("data_inicio", { ascending: true })
+      .limit(500);
+
+    const lista = (agendamentos ?? []).map((a) => {
+      const leadRef = a.leads as LeadRef;
+      const lead = Array.isArray(leadRef) ? leadRef[0] : leadRef;
+      return {
+        id: a.id,
+        data_inicio: a.data_inicio,
+        status: a.status,
+        lead_id: a.lead_id,
+        lead_nome: lead?.nome ?? null,
+        lead_telefone: lead?.telefone ?? "",
+      };
+    });
+
+    return (
+      <div>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <PageHeader
+            titulo="Agenda"
+            descricao="Consultorias agendadas pelo Caio"
+          />
+          <ViewToggle viewAtual={view} />
+        </div>
+        <CalendarioAgenda agendamentos={lista} />
+      </div>
+    );
+  }
+
+  // View Lista (default)
   const [{ data: proximosAgendamentos }, { data: agendamentosPassados }] =
     await Promise.all([
       supabase
@@ -18,32 +96,35 @@ export default async function AgendaPage() {
         .select(
           "id, data_inicio, data_fim, status, meet_link, lead_id, leads(nome, telefone)",
         )
-        .gte("data_inicio", agora)
+        .gte("data_inicio", agora.toISOString())
         .order("data_inicio", { ascending: true })
-        .limit(20),
+        .limit(50),
       supabase
         .from("agendamentos")
-        .select("id, data_inicio, status, lead_id, leads(nome, telefone)")
-        .lt("data_inicio", agora)
+        .select(
+          "id, data_inicio, data_fim, status, meet_link, lead_id, leads(nome, telefone)",
+        )
+        .lt("data_inicio", agora.toISOString())
         .gte("data_inicio", trintaDiasAtras.toISOString())
         .order("data_inicio", { ascending: false })
-        .limit(20),
+        .limit(30),
     ]);
 
   return (
     <div>
-      <PageHeader
-        titulo="Agenda"
-        descricao="Consultorias agendadas pelo Caio"
-      />
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <PageHeader
+          titulo="Agenda"
+          descricao="Consultorias agendadas pelo Caio"
+        />
+        <ViewToggle viewAtual={view} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Próximas reuniões — coluna principal */}
         <div className="lg:col-span-2">
           <h2 className="text-lg font-heading font-bold text-preto mb-4">
             Próximas reuniões
           </h2>
-
           {!proximosAgendamentos || proximosAgendamentos.length === 0 ? (
             <EmptyState
               icone="📅"
@@ -52,23 +133,17 @@ export default async function AgendaPage() {
             />
           ) : (
             <div className="space-y-3">
-              {proximosAgendamentos.map((a) => (
-                <AgendamentoCard
-                  key={a.id}
-                  agendamento={a}
-                  destaque
-                />
+              {(proximosAgendamentos as AgendamentoDB[]).map((a) => (
+                <AgendamentoCard key={a.id} agendamento={a} destaque />
               ))}
             </div>
           )}
         </div>
 
-        {/* Coluna lateral — Histórico */}
         <div>
           <h2 className="text-lg font-heading font-bold text-preto mb-4">
             Últimos 30 dias
           </h2>
-
           {!agendamentosPassados || agendamentosPassados.length === 0 ? (
             <div className="bg-white rounded-2xl border border-cinza-claro p-6 text-center">
               <p className="text-sm text-cinza-medio">
@@ -77,11 +152,8 @@ export default async function AgendaPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {agendamentosPassados.map((a) => (
-                <AgendamentoCard
-                  key={a.id}
-                  agendamento={a}
-                />
+              {(agendamentosPassados as AgendamentoDB[]).map((a) => (
+                <AgendamentoCard key={a.id} agendamento={a} />
               ))}
             </div>
           )}
@@ -91,26 +163,46 @@ export default async function AgendaPage() {
   );
 }
 
-type LeadRef = { nome?: string | null; telefone?: string } | { nome?: string | null; telefone?: string }[] | null;
+function ViewToggle({ viewAtual }: { viewAtual: View }) {
+  return (
+    <div className="inline-flex rounded-lg border border-cinza-claro overflow-hidden">
+      <Link
+        href="/dashboard/agenda?view=lista"
+        className={`px-3 py-2 text-sm font-heading font-semibold transition border-r border-cinza-claro flex items-center gap-1.5 ${
+          viewAtual === "lista"
+            ? "bg-preto text-white"
+            : "bg-white text-cinza-medio hover:text-preto"
+        }`}
+      >
+        Lista
+      </Link>
+      <Link
+        href="/dashboard/agenda?view=calendario"
+        className={`px-3 py-2 text-sm font-heading font-semibold transition flex items-center gap-1.5 ${
+          viewAtual === "calendario"
+            ? "bg-preto text-white"
+            : "bg-white text-cinza-medio hover:text-preto"
+        }`}
+      >
+        Calendário
+      </Link>
+    </div>
+  );
+}
 
 function AgendamentoCard({
   agendamento,
   destaque = false,
 }: {
-  agendamento: {
-    id: string;
-    data_inicio: string;
-    data_fim?: string;
-    status: string;
-    meet_link?: string | null;
-    lead_id: string;
-    leads: LeadRef;
-  };
+  agendamento: AgendamentoDB;
   destaque?: boolean;
 }) {
   const leadRef = agendamento.leads;
   const lead = Array.isArray(leadRef) ? leadRef[0] : leadRef;
   const data = new Date(agendamento.data_inicio);
+  const diffMs = data.getTime() - Date.now();
+  const ehFuturo = diffMs > 0;
+  const tempoRelativo = ehFuturo ? tempoAteFuturo(diffMs) : null;
 
   return (
     <div
@@ -127,7 +219,10 @@ function AgendamentoCard({
             {lead?.telefone}
           </p>
         </div>
-        <StatusAgendamento status={agendamento.status} />
+        <StatusAgendamentoSelector
+          agendamentoId={agendamento.id}
+          statusAtual={agendamento.status}
+        />
       </div>
 
       <div className="flex items-center gap-2 mb-2">
@@ -145,6 +240,14 @@ function AgendamentoCard({
             minute: "2-digit",
           })}
         </span>
+        {tempoRelativo && (
+          <>
+            <span className="text-cinza-claro">•</span>
+            <span className="text-xs text-emerald-700 font-heading font-semibold">
+              em {tempoRelativo}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2">
@@ -171,21 +274,12 @@ function AgendamentoCard({
   );
 }
 
-function StatusAgendamento({ status }: { status: string }) {
-  const config: Record<string, { label: string; cor: string }> = {
-    agendado: { label: "Agendado", cor: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    realizado: { label: "Realizado", cor: "bg-blue-50 text-blue-700 border-blue-200" },
-    no_show: { label: "No-show", cor: "bg-red-50 text-red-700 border-red-200" },
-    cancelado: { label: "Cancelado", cor: "bg-cinza-claro text-cinza-medio border-cinza-claro" },
-  };
-
-  const c = config[status] ?? config.agendado;
-
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded-full text-xs font-heading font-semibold border ${c.cor}`}
-    >
-      {c.label}
-    </span>
-  );
+function tempoAteFuturo(diffMs: number): string {
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffDias = Math.floor(diffMs / 86400000);
+  if (diffMin < 60) return `${diffMin}min`;
+  if (diffHrs < 24) return `${diffHrs}h`;
+  if (diffDias < 7) return `${diffDias}d`;
+  return `${Math.floor(diffDias / 7)}sem`;
 }
