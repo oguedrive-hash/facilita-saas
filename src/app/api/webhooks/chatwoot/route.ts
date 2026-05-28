@@ -235,8 +235,19 @@ async function responderLeadAuto(
   const texto = result.resposta;
 
   if (responderComAudio) {
+    // Busca voice config da org pra esse lead
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("voice_id, voice_settings")
+      .eq("id", organizationId)
+      .single();
+
     // TTS via ElevenLabs + envia áudio no Chatwoot
-    const tts = await gerarAudio({ texto });
+    const tts = await gerarAudio({
+      texto,
+      voiceId: org?.voice_id ?? undefined,
+      voiceSettings: org?.voice_settings ?? null,
+    });
     if ("error" in tts) {
       console.warn(
         "[caio:auto]",

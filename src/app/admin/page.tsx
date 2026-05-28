@@ -6,25 +6,29 @@ import { EmptyState } from "@/components/empty-state";
 export default async function AdminPage() {
   const supabase = await createClient();
 
-  const { data: clientes } = await supabase
-    .from("organizations")
-    .select("id, name, email_contato, whatsapp_numero, plano, ativo, inadimplente, created_at")
-    .order("created_at", { ascending: false });
-
-  // Métricas globais rápidas
-  const { count: totalClientes } = await supabase
-    .from("organizations")
-    .select("*", { count: "exact", head: true });
-
-  const { count: clientesAtivos } = await supabase
-    .from("organizations")
-    .select("*", { count: "exact", head: true })
-    .eq("ativo", true)
-    .eq("inadimplente", false);
-
-  const { count: totalLeads } = await supabase
-    .from("leads")
-    .select("*", { count: "exact", head: true });
+  // Paraleliza pra reduzir round-trips ao Supabase
+  const [
+    { data: clientes },
+    { count: totalClientes },
+    { count: clientesAtivos },
+    { count: totalLeads },
+  ] = await Promise.all([
+    supabase
+      .from("organizations")
+      .select(
+        "id, name, email_contato, whatsapp_numero, plano, ativo, inadimplente, created_at",
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("organizations")
+      .select("*", { count: "exact", head: true }),
+    supabase
+      .from("organizations")
+      .select("*", { count: "exact", head: true })
+      .eq("ativo", true)
+      .eq("inadimplente", false),
+    supabase.from("leads").select("*", { count: "exact", head: true }),
+  ]);
 
   return (
     <div>

@@ -42,6 +42,25 @@ export async function editarClienteAction(
   const voice_id = (formData.get("voice_id") as string)?.trim();
   const ativo = formData.get("ativo") === "on";
 
+  // Voice settings — clamps mantêm os valores no range válido da ElevenLabs
+  const clamp = (n: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, n));
+  const num = (v: FormDataEntryValue | null, fallback: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const voice_settings = {
+    stability: clamp(num(formData.get("voice_stability"), 0.25), 0, 1),
+    similarity_boost: clamp(
+      num(formData.get("voice_similarity_boost"), 0.9),
+      0,
+      1,
+    ),
+    style: clamp(num(formData.get("voice_style"), 0.75), 0, 1),
+    speed: clamp(num(formData.get("voice_speed"), 1.15), 0.7, 1.2),
+    use_speaker_boost: formData.get("voice_use_speaker_boost") === "on",
+  };
+
   if (!name) return { error: "Nome é obrigatório" };
   if (!email_contato) return { error: "Email é obrigatório" };
 
@@ -54,6 +73,7 @@ export async function editarClienteAction(
       plano,
       prompt_system: prompt_system || null,
       voice_id: voice_id || null,
+      voice_settings,
       ativo,
     })
     .eq("id", id);
