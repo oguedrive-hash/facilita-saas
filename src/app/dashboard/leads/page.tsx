@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusSelector } from "@/components/status-selector";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 type CaioFilter = "todos" | "on" | "off";
@@ -157,62 +156,71 @@ export default async function LeadsPage({
 
   return (
     <div>
-      <PageHeader
-        titulo="Leads"
-        descricao="Todos os leads capturados pelo Caio"
-        acao={
+      {/* Header compacto: titulo + busca + export em uma linha */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-heading font-bold text-preto">Leads</h1>
+          <span className="text-xs text-cinza-medio">
+            {contagens.todos} no total
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <form
+            method="get"
+            action="/dashboard/leads"
+            className="flex items-center gap-1.5"
+          >
+            {statusFilter !== "todos" && (
+              <input type="hidden" name="status" value={statusFilter} />
+            )}
+            {caioFilter !== "todos" && (
+              <input type="hidden" name="caio" value={caioFilter} />
+            )}
+            {periodo !== "todos" && (
+              <input type="hidden" name="periodo" value={periodo} />
+            )}
+            {de && <input type="hidden" name="de" value={de} />}
+            {ate && <input type="hidden" name="ate" value={ate} />}
+            <input
+              type="search"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Buscar nome ou telefone..."
+              className="px-3 py-1.5 w-56 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 bg-preto text-white text-sm font-heading font-semibold rounded-lg hover:opacity-90 transition"
+            >
+              Buscar
+            </button>
+            {searchQuery && (
+              <Link
+                href={buildHref({ q: "" })}
+                className="px-2 py-1.5 text-xs text-cinza-medio hover:text-preto transition"
+                title="Limpar busca"
+              >
+                ✕
+              </Link>
+            )}
+          </form>
           <a
             href={buildExportHref()}
-            className="inline-flex items-center px-4 py-2.5 rounded-lg bg-white border border-cinza-claro hover:border-laranja text-preto font-heading font-semibold text-sm transition"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-white border border-cinza-claro hover:border-laranja text-preto font-heading font-semibold text-sm transition"
           >
-            ⬇ Exportar CSV
+            ⬇ CSV
           </a>
-        }
-      />
-
-      {/* Busca */}
-      <form method="get" action="/dashboard/leads" className="mb-4">
-        {statusFilter !== "todos" && (
-          <input type="hidden" name="status" value={statusFilter} />
-        )}
-        {caioFilter !== "todos" && (
-          <input type="hidden" name="caio" value={caioFilter} />
-        )}
-        {periodo !== "todos" && (
-          <input type="hidden" name="periodo" value={periodo} />
-        )}
-        <div className="flex items-center gap-2 max-w-md">
-          <input
-            type="search"
-            name="q"
-            defaultValue={searchQuery}
-            placeholder="Buscar por nome ou telefone..."
-            className="flex-1 px-3 py-2 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-preto text-white text-sm font-heading font-semibold rounded-lg hover:opacity-90 transition"
-          >
-            Buscar
-          </button>
-          {searchQuery && (
-            <Link
-              href={buildHref({ q: "" })}
-              className="px-3 py-2 text-sm text-cinza-medio hover:text-preto transition"
-            >
-              Limpar
-            </Link>
-          )}
         </div>
-      </form>
+      </div>
 
-      {/* Filtros de status */}
-      <div className="flex flex-wrap gap-2 mb-3">
+      {/* Status + Caio numa linha */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-2">
         <FilterChip
           label="Todos"
           count={contagens.todos}
           active={statusFilter === "todos"}
           href={buildHref({ status: "todos" })}
+          variant="subtle"
         />
         {(Object.keys(STATUS_CONFIG) as StatusLead[])
           .sort((a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem)
@@ -223,105 +231,91 @@ export default async function LeadsPage({
               count={contagens[status] ?? 0}
               active={statusFilter === status}
               href={buildHref({ status })}
+              variant="subtle"
             />
           ))}
-      </div>
-
-      {/* Filtros Caio + Período */}
-      <div className="flex flex-wrap gap-2 mb-6">
+        <div className="w-px h-5 bg-cinza-claro mx-1 self-center" />
         <FilterChip
-          label="Caio: todos"
-          count={contagens.todos}
-          active={caioFilter === "todos"}
-          href={buildHref({ caio: "todos" })}
-          variant="subtle"
-        />
-        <FilterChip
-          label="🟢 Caio respondendo"
+          label="🟢 Caio on"
           count={contagens.caio_on}
           active={caioFilter === "on"}
           href={buildHref({ caio: "on" })}
           variant="subtle"
         />
         <FilterChip
-          label="🔴 Caio desligado"
+          label="🔴 Caio off"
           count={contagens.caio_off}
           active={caioFilter === "off"}
           href={buildHref({ caio: "off" })}
           variant="subtle"
         />
+      </div>
 
-        <div className="w-px h-6 bg-cinza-claro mx-1 self-center" />
-
+      {/* Periodo: chips + custom inline */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-5">
+        <span className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mr-1">
+          Período:
+        </span>
         {(["todos", "hoje", "7d", "30d"] as Periodo[]).map((p) => (
           <FilterChip
             key={p}
             label={
               p === "todos"
-                ? "Todo o período"
+                ? "Tudo"
                 : p === "hoje"
                   ? "Hoje"
                   : p === "7d"
-                    ? "Últimos 7 dias"
-                    : "Últimos 30 dias"
+                    ? "7d"
+                    : "30d"
             }
             active={periodo === p && !de && !ate}
             href={buildHref({ periodo: p })}
             variant="subtle"
           />
         ))}
-      </div>
-
-      {/* Período customizado */}
-      <form
-        method="get"
-        action="/dashboard/leads"
-        className="flex flex-wrap items-end gap-2 mb-6 p-3 bg-offwhite rounded-lg border border-cinza-claro"
-      >
-        {statusFilter !== "todos" && (
-          <input type="hidden" name="status" value={statusFilter} />
-        )}
-        {caioFilter !== "todos" && (
-          <input type="hidden" name="caio" value={caioFilter} />
-        )}
-        {searchQuery && <input type="hidden" name="q" value={searchQuery} />}
-        <div>
-          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
-            Data início
-          </label>
+        <div className="w-px h-5 bg-cinza-claro mx-1 self-center" />
+        <form
+          method="get"
+          action="/dashboard/leads"
+          className="flex items-center gap-1.5"
+        >
+          {statusFilter !== "todos" && (
+            <input type="hidden" name="status" value={statusFilter} />
+          )}
+          {caioFilter !== "todos" && (
+            <input type="hidden" name="caio" value={caioFilter} />
+          )}
+          {searchQuery && <input type="hidden" name="q" value={searchQuery} />}
           <input
             type="date"
             name="de"
             defaultValue={de}
-            className="px-3 py-1.5 text-sm border border-cinza-claro rounded-lg bg-white text-preto focus:outline-none focus:border-laranja transition"
+            className="px-2 py-1 text-xs border border-cinza-claro rounded-md bg-white text-preto focus:outline-none focus:border-laranja transition"
           />
-        </div>
-        <div>
-          <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
-            Data fim
-          </label>
+          <span className="text-xs text-cinza-medio">→</span>
           <input
             type="date"
             name="ate"
             defaultValue={ate}
-            className="px-3 py-1.5 text-sm border border-cinza-claro rounded-lg bg-white text-preto focus:outline-none focus:border-laranja transition"
+            className="px-2 py-1 text-xs border border-cinza-claro rounded-md bg-white text-preto focus:outline-none focus:border-laranja transition"
           />
-        </div>
-        <button
-          type="submit"
-          className="px-3 py-1.5 text-sm font-heading font-semibold bg-preto text-white rounded-lg hover:opacity-90 transition"
-        >
-          Aplicar
-        </button>
-        {(de || ate) && (
-          <Link
-            href={buildHref({ de: "", ate: "" })}
-            className="px-3 py-1.5 text-sm text-cinza-medio hover:text-preto transition"
+          <button
+            type="submit"
+            className="px-2 py-1 text-xs font-heading font-semibold bg-preto text-white rounded-md hover:opacity-90 transition"
           >
-            Limpar período
-          </Link>
-        )}
-      </form>
+            OK
+          </button>
+          {(de || ate) && (
+            <Link
+              href={buildHref({ de: "", ate: "" })}
+              className="px-1.5 py-1 text-xs text-cinza-medio hover:text-preto transition"
+              title="Limpar período"
+            >
+              ✕
+            </Link>
+          )}
+        </form>
+      </div>
 
       {/* Erro */}
       {error && (
