@@ -13,7 +13,7 @@ export default async function FollowupPage({
 
   const { data: cliente, error } = await supabase
     .from("organizations")
-    .select("id, name, followup_config")
+    .select("id, name, followup_config, followup_mudar_status_a_partir")
     .eq("id", id)
     .single();
 
@@ -43,6 +43,9 @@ export default async function FollowupPage({
         <FollowupEditor
           organizationId={cliente.id}
           configInicial={cliente.followup_config}
+          mudarStatusAPartirInicial={
+            cliente.followup_mudar_status_a_partir ?? 1
+          }
         />
       </div>
     </div>

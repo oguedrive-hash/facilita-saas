@@ -28,6 +28,7 @@ export type FollowupConfig = {
 export async function salvarFollowupConfig(
   organizationId: string,
   config: FollowupConfig,
+  mudarStatusAPartir: number,
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
 
@@ -70,10 +71,15 @@ export async function salvarFollowupConfig(
     usa_ia: !!config.reativacao?.usa_ia,
   };
 
+  const mudarSanitizado = Math.round(
+    clamp(mudarStatusAPartir ?? 1, 1, Math.max(1, regrasLimpas.length)),
+  );
+
   const { error } = await supabase
     .from("organizations")
     .update({
       followup_config: { regras: regrasLimpas, reativacao: reativacaoLimpa },
+      followup_mudar_status_a_partir: mudarSanitizado,
     })
     .eq("id", organizationId);
 

@@ -28,15 +28,20 @@ const DEFAULT_REATIVACAO: FollowupReativacao = {
 export function FollowupEditor({
   organizationId,
   configInicial,
+  mudarStatusAPartirInicial,
 }: {
   organizationId: string;
   configInicial: FollowupConfig | null;
+  mudarStatusAPartirInicial: number;
 }) {
   const [regras, setRegras] = useState<FollowupRegra[]>(
     configInicial?.regras ?? [],
   );
   const [reativacao, setReativacao] = useState<FollowupReativacao>(
     configInicial?.reativacao ?? DEFAULT_REATIVACAO,
+  );
+  const [mudarStatusAPartir, setMudarStatusAPartir] = useState(
+    mudarStatusAPartirInicial,
   );
   const [pending, startTransition] = useTransition();
   const [salvouAgora, setSalvouAgora] = useState(false);
@@ -67,10 +72,11 @@ export function FollowupEditor({
   function salvar() {
     setErro(null);
     startTransition(async () => {
-      const result = await salvarFollowupConfig(organizationId, {
-        regras,
-        reativacao,
-      });
+      const result = await salvarFollowupConfig(
+        organizationId,
+        { regras, reativacao },
+        mudarStatusAPartir,
+      );
       if ("error" in result) {
         setErro(result.error);
       } else {
@@ -102,6 +108,29 @@ export function FollowupEditor({
             + Adicionar regra
           </button>
         </div>
+
+        {regras.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-laranja/5 border border-laranja/20">
+            <label className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-preto">
+                Mudar status do lead pra "follow-up" a partir da regra
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={regras.length}
+                value={mudarStatusAPartir}
+                onChange={(e) =>
+                  setMudarStatusAPartir(parseInt(e.target.value, 10) || 1)
+                }
+                className="w-16 px-2 py-1 rounded-md border border-cinza-claro bg-white text-preto text-sm focus:outline-none focus:border-laranja"
+              />
+              <span className="text-xs text-cinza-medio">
+                (antes disso, status fica como "em conversa" ou "novo lead")
+              </span>
+            </label>
+          </div>
+        )}
 
         {regras.length === 0 ? (
           <p className="text-sm text-cinza-medio text-center py-8 bg-offwhite rounded-lg border border-cinza-claro">

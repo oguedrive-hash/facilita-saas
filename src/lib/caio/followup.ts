@@ -49,6 +49,7 @@ type LeadProcess = {
   numero_followup: number | null;
   chatwoot_conversation_id: number | null;
   caio_ativo: boolean | null;
+  followup_ativo: boolean | null;
 };
 
 /**
@@ -83,8 +84,8 @@ export async function processarFollowupLead(
   if (!lead.chatwoot_conversation_id) {
     return { error: "lead sem chatwoot_conversation_id" };
   }
-  if (!lead.caio_ativo) {
-    // Caio foi desligado — desiste e zera o agendamento
+  if (!lead.caio_ativo || lead.followup_ativo === false) {
+    // Caio desligado ou follow-up pausado pelo user — zera o agendamento
     await supabase
       .from("leads")
       .update({ proximo_followup_em: null })
@@ -95,11 +96,13 @@ export async function processarFollowupLead(
   // Le config da org
   const { data: org } = await supabase
     .from("organizations")
-    .select("followup_config")
+    .select("followup_config, followup_mudar_status_a_partir")
     .eq("id", lead.organization_id)
     .single();
 
   const config = (org?.followup_config ?? null) as FollowupConfig | null;
+  const mudarStatusAPartir =
+    (org?.followup_mudar_status_a_partir as number | null) ?? 1;
   if (!config?.regras) {
     return { error: "org sem followup_config" };
   }
@@ -151,8 +154,15 @@ export async function processarFollowupLead(
     numero_followup: proximoNivel,
     ultimo_followup_em: new Date().toISOString(),
     proximo_followup_em: proximoEm?.toISOString() ?? null,
-    status: lead.status === "novo_lead" ? "followup" : lead.status,
   };
+  // So muda pra status "followup" se atingiu o gatilho configurado da org.
+  // Antes disso, mantem o status atual (em_conversa, novo_lead, etc).
+  if (
+    proximoNivel >= mudarStatusAPartir &&
+    (lead.status === "novo_lead" || lead.status === "em_conversa")
+  ) {
+    update.status = "followup";
+  }
 
   // Se essa foi a ultima regra ativa, encerra ciclo (desistencia ou reativacao)
   if (!proximaRegra) {
@@ -239,9 +249,10 @@ export async function processarFollowupsPendentes(): Promise<{
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, organization_id, numero_followup, chatwoot_conversation_id, caio_ativo",
+      "id, nome, telefone, status, organization_id, numero_followup, chatwoot_conversation_id, caio_ativo, followup_ativo",
     )
     .eq("caio_ativo", true)
+    .eq("followup_ativo", true)
     .not("proximo_followup_em", "is", null)
     .lte("proximo_followup_em", new Date().toISOString())
     .limit(50); // safety cap por execucao

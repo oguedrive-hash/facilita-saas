@@ -6,6 +6,7 @@ import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
 import { ToggleCaio } from "@/components/toggle-caio";
+import { ToggleFollowup } from "@/components/toggle-followup";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
@@ -184,6 +185,15 @@ export default async function LeadDetalhePage({
               leadId={lead.id}
               resumoInicial={lead.resumo_ia ?? null}
               geradoEm={lead.resumo_gerado_em ?? null}
+            />
+          </Card>
+
+          <Card titulo="Follow-up">
+            <ToggleFollowup
+              leadId={lead.id}
+              ativoInicial={lead.followup_ativo ?? true}
+              proximoEm={lead.proximo_followup_em ?? null}
+              numeroAtual={lead.numero_followup ?? 0}
             />
           </Card>
 

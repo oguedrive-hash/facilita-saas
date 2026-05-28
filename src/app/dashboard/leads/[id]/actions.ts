@@ -206,6 +206,62 @@ export async function mudarStatusLead(formData: FormData): Promise<
   }
   if (ehTerminal) update.caio_ativo = false;
 
+  // Regras de follow-up automaticas por mudanca manual de status:
+  // - novo_lead / em_conversa: desliga + zera regras
+  // - followup: liga, mantem nivel atual (continua de onde tava); se nunca rodou,
+  //   agenda 1a regra
+  // - reuniao_agendada / contatar_futuramente / fechou / perdido: desliga + zera
+  if (statusNovo === "em_conversa" || statusNovo === "novo_lead") {
+    update.followup_ativo = false;
+    update.numero_followup = 0;
+    update.proximo_followup_em = null;
+  } else if (statusNovo === "followup") {
+    update.followup_ativo = true;
+    // Se nunca rodou follow-up, agendar 1a regra agora
+    const { data: leadAtual } = await admin
+      .from("leads")
+      .select("numero_followup, organization_id")
+      .eq("id", leadId)
+      .single();
+    if (
+      leadAtual &&
+      (!leadAtual.numero_followup || leadAtual.numero_followup === 0)
+    ) {
+      const { data: org } = await admin
+        .from("organizations")
+        .select("followup_config")
+        .eq("id", leadAtual.organization_id)
+        .single();
+      const config = org?.followup_config as
+        | {
+            regras?: {
+              nivel: number;
+              esperar_dias: number;
+              esperar_horas: number;
+              esperar_minutos: number;
+              ativo: boolean;
+            }[];
+          }
+        | null
+        | undefined;
+      const r1 = config?.regras?.find((r) => r.ativo && r.nivel === 1);
+      if (r1) {
+        const proximoEm = new Date();
+        proximoEm.setDate(proximoEm.getDate() + (r1.esperar_dias ?? 0));
+        proximoEm.setHours(proximoEm.getHours() + (r1.esperar_horas ?? 0));
+        proximoEm.setMinutes(
+          proximoEm.getMinutes() + (r1.esperar_minutos ?? 0),
+        );
+        update.proximo_followup_em = proximoEm.toISOString();
+      }
+    }
+  } else {
+    // reuniao_agendada, contatar_futuramente, fechou, perdido
+    update.followup_ativo = false;
+    update.numero_followup = 0;
+    update.proximo_followup_em = null;
+  }
+
   const { error: updateErr } = await admin
     .from("leads")
     .update(update)
@@ -506,6 +562,78 @@ export async function salvarNotas(formData: FormData): Promise<
   const { error } = await supabase
     .from("leads")
     .update({ notas: notas.trim() || null })
+    .eq("id", leadId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/leads/${leadId}`);
+  return { ok: true };
+}
+
+/**
+ * Liga ou desliga follow-up automatico de um lead especifico.
+ * Quando desliga, o worker ignora esse lead mesmo se proximo_followup_em vencer.
+ * Quando liga, se nao houver proximo agendado e a org tiver regras, agenda a 1a.
+ */
+export async function toggleFollowupAtivo(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  const ativoStr = formData.get("ativo");
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+  const ativo = ativoStr === "true";
+
+  const admin = createAdminClient();
+  const update: Record<string, unknown> = { followup_ativo: ativo };
+
+  if (!ativo) {
+    update.proximo_followup_em = null;
+  } else {
+    // Liga: se nao tem proximo agendado, agenda baseado no numero_followup atual
+    const { data: lead } = await admin
+      .from("leads")
+      .select("numero_followup, proximo_followup_em, organization_id")
+      .eq("id", leadId)
+      .single();
+    if (lead && !lead.proximo_followup_em) {
+      const { data: org } = await admin
+        .from("organizations")
+        .select("followup_config")
+        .eq("id", lead.organization_id)
+        .single();
+      const config = org?.followup_config as
+        | {
+            regras?: {
+              nivel: number;
+              esperar_dias: number;
+              esperar_horas: number;
+              esperar_minutos: number;
+              ativo: boolean;
+            }[];
+          }
+        | null
+        | undefined;
+      const proximoNivel = (lead.numero_followup ?? 0) + 1;
+      const regra = config?.regras?.find(
+        (r) => r.ativo && r.nivel === proximoNivel,
+      );
+      if (regra) {
+        const proximoEm = new Date();
+        proximoEm.setDate(proximoEm.getDate() + (regra.esperar_dias ?? 0));
+        proximoEm.setHours(proximoEm.getHours() + (regra.esperar_horas ?? 0));
+        proximoEm.setMinutes(
+          proximoEm.getMinutes() + (regra.esperar_minutos ?? 0),
+        );
+        update.proximo_followup_em = proximoEm.toISOString();
+      }
+    }
+  }
+
+  const { error } = await admin
+    .from("leads")
+    .update(update)
     .eq("id", leadId);
 
   if (error) return { error: error.message };
