@@ -126,11 +126,7 @@ export default async function LeadDetalhePage({
           <Card titulo="Conversa">
             <TimelineMensagens
               mensagens={mensagens ?? []}
-              caioDigitando={
-                !!lead.caio_processing_since &&
-                Date.now() - new Date(lead.caio_processing_since).getTime() <
-                  90_000
-              }
+              caioProcessingSince={lead.caio_processing_since ?? null}
             />
             <CaixaResposta
               leadId={lead.id}
