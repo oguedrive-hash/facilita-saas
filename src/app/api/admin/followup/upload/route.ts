@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { comprimirVideoSeNecessario } from "@/lib/caio/comprimir-video";
 
 const TIPOS_PERMITIDOS = [
   "image/jpeg",
@@ -11,7 +12,10 @@ const TIPOS_PERMITIDOS = [
   "video/webm",
 ];
 
-const TAMANHO_MAX_MB = 20;
+const TAMANHO_MAX_MB = 100;
+
+// Aumenta timeout do route handler (compressao pode demorar)
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   // Valida admin
@@ -50,15 +54,37 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Le buffer e comprime se necessario (videos > 14MB)
+  const arrayBuf = await file.arrayBuffer();
+  const bufferOriginal: Uint8Array = new Uint8Array(arrayBuf);
+  let comprimiu = false;
+  let bufferFinal: Uint8Array = bufferOriginal;
+  let mimeFinal = file.type;
+
+  if (file.type.startsWith("video/")) {
+    try {
+      const result = await comprimirVideoSeNecessario({
+        buffer: bufferOriginal,
+        mimeType: file.type,
+      });
+      bufferFinal = result.buffer;
+      mimeFinal = result.mimeType;
+      comprimiu = result.comprimiu;
+    } catch (err) {
+      console.warn("[upload] compressao falhou:", err);
+      // Segue com original; se passar do limite, Chatwoot vai rejeitar depois
+    }
+  }
+
   // Upload via service_role (bypass RLS)
   const admin = createAdminClient();
-  const ext = file.name.split(".").pop() ?? "bin";
+  const ext = mimeFinal === "video/mp4" ? "mp4" : file.name.split(".").pop() ?? "bin";
   const nomeArquivo = `${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadErr } = await admin.storage
     .from("followup-anexos")
-    .upload(nomeArquivo, file, {
-      contentType: file.type,
+    .upload(nomeArquivo, bufferFinal, {
+      contentType: mimeFinal,
       cacheControl: "31536000",
       upsert: false,
     });
@@ -76,7 +102,10 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     url: urlData.publicUrl,
-    mime: file.type,
+    mime: mimeFinal,
     nome: file.name,
+    tamanho_original: bufferOriginal.length,
+    tamanho_final: bufferFinal.length,
+    comprimiu,
   });
 }

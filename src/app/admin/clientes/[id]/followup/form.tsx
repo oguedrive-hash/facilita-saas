@@ -613,12 +613,18 @@ function UploadAnexo({
 }) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setErro(null);
     setEnviando(true);
+    setStatusMsg(
+      tipo === "video" && file.size > 14 * 1024 * 1024
+        ? "Enviando e comprimindo vídeo (pode levar 1-2 min)…"
+        : "Enviando…",
+    );
     try {
       const fd = new FormData();
       fd.set("file", file);
@@ -630,6 +636,14 @@ function UploadAnexo({
       if (!res.ok) {
         setErro(data.error ?? "upload falhou");
         return;
+      }
+      if (data.comprimiu) {
+        const mbOrig = (data.tamanho_original / 1024 / 1024).toFixed(1);
+        const mbFinal = (data.tamanho_final / 1024 / 1024).toFixed(1);
+        setStatusMsg(`✓ Comprimido de ${mbOrig}MB pra ${mbFinal}MB`);
+        setTimeout(() => setStatusMsg(null), 5000);
+      } else {
+        setStatusMsg(null);
       }
       onUploaded(data.url, data.mime);
     } catch (err) {
@@ -693,7 +707,12 @@ function UploadAnexo({
             className="block w-full text-xs text-cinza-medio file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-cinza-claro file:bg-white file:text-preto file:font-heading file:font-semibold file:text-xs hover:file:border-laranja cursor-pointer disabled:opacity-50"
           />
           {enviando && (
-            <p className="text-[10px] text-cinza-medio mt-1">Enviando…</p>
+            <p className="text-[10px] text-cinza-medio mt-1">
+              {statusMsg ?? "Enviando…"}
+            </p>
+          )}
+          {!enviando && statusMsg && (
+            <p className="text-[10px] text-emerald-700 mt-1">{statusMsg}</p>
           )}
           {erro && <p className="text-[10px] text-red-700 mt-1">{erro}</p>}
         </label>
