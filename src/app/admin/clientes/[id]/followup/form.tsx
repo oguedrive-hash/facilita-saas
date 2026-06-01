@@ -8,6 +8,7 @@ import {
   type FollowupReativacao,
   type LembreteReuniaoConfig,
   type LembreteReuniaoRegra,
+  type RetomadaConfig,
 } from "./actions";
 
 const DEFAULT_REGRA: FollowupRegra = {
@@ -43,11 +44,13 @@ export function FollowupEditor({
   configInicial,
   mudarStatusAPartirInicial,
   lembreteConfigInicial,
+  retomadaInicial,
 }: {
   organizationId: string;
   configInicial: FollowupConfig | null;
   mudarStatusAPartirInicial: number;
   lembreteConfigInicial: LembreteReuniaoConfig | null;
+  retomadaInicial: RetomadaConfig;
 }) {
   const [regras, setRegras] = useState<FollowupRegra[]>(
     configInicial?.regras ?? [],
@@ -61,6 +64,7 @@ export function FollowupEditor({
   const [lembretes, setLembretes] = useState<LembreteReuniaoRegra[]>(
     lembreteConfigInicial?.regras ?? [],
   );
+  const [retomada, setRetomada] = useState<RetomadaConfig>(retomadaInicial);
   const [pending, startTransition] = useTransition();
   const [salvouAgora, setSalvouAgora] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -107,6 +111,7 @@ export function FollowupEditor({
         { regras, reativacao },
         mudarStatusAPartir,
         { regras: lembretes },
+        retomada,
       );
       if ("error" in result) {
         setErro(result.error);
@@ -313,6 +318,55 @@ export function FollowupEditor({
           Placeholders disponíveis: {"{nome}"}, {"{hora}"}, {"{data}"},{" "}
           {"{meet_link}"}
         </p>
+      </section>
+
+      {/* Seção 4: Mensagem de retomada (lead pediu pra chamar outro dia) */}
+      <section className="pt-6 border-t border-cinza-claro">
+        <div className="mb-3">
+          <h3 className="text-base font-heading font-bold text-preto">
+            Mensagem de retomada
+          </h3>
+          <p className="text-xs text-cinza-medio mt-1">
+            Quando lead pede pra ser chamado em data específica ("me chama
+            amanhã às 14h"), o Caio agenda automaticamente. Na hora combinada,
+            dispara essa mensagem.
+          </p>
+        </div>
+        <div className="space-y-3 p-4 rounded-lg bg-offwhite border border-cinza-claro">
+          <div>
+            <label className="block text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+              Mensagem
+            </label>
+            <textarea
+              rows={2}
+              value={retomada.mensagem}
+              onChange={(e) =>
+                setRetomada({ ...retomada, mensagem: e.target.value })
+              }
+              placeholder="Ex: Oi {nome}! Como combinamos, voltando ao contato. Posso te apresentar a Facilita?"
+              className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition text-sm"
+            />
+            <p className="text-[10px] text-cinza-medio mt-1">
+              Use {"{nome}"} pra inserir o nome do lead.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={retomada.usa_ia}
+              onChange={(e) =>
+                setRetomada({ ...retomada, usa_ia: e.target.checked })
+              }
+              className="w-4 h-4 rounded text-laranja focus:ring-laranja"
+            />
+            <span className="text-sm text-preto">
+              Personalizar com IA (Caio adapta ao histórico)
+            </span>
+            <span className="text-[10px] text-cinza-medio ml-2">
+              Recomendado deixar desligado pra mensagem ficar previsível
+            </span>
+          </label>
+        </div>
       </section>
 
       {/* Footer */}

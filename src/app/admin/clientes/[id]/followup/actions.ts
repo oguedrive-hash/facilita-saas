@@ -40,11 +40,17 @@ export type LembreteReuniaoConfig = {
   regras: LembreteReuniaoRegra[];
 };
 
+export type RetomadaConfig = {
+  mensagem: string;
+  usa_ia: boolean;
+};
+
 export async function salvarFollowupConfig(
   organizationId: string,
   config: FollowupConfig,
   mudarStatusAPartir: number,
   lembreteConfig: LembreteReuniaoConfig,
+  retomadaConfig: RetomadaConfig,
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
 
@@ -111,6 +117,8 @@ export async function salvarFollowupConfig(
       followup_config: { regras: regrasLimpas, reativacao: reativacaoLimpa },
       followup_mudar_status_a_partir: mudarSanitizado,
       lembrete_reuniao_config: { regras: lembretesLimpos },
+      mensagem_retomada: (retomadaConfig?.mensagem ?? "").trim() || null,
+      mensagem_retomada_usa_ia: !!retomadaConfig?.usa_ia,
     })
     .eq("id", organizationId);
 

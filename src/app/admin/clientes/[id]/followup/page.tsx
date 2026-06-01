@@ -14,7 +14,7 @@ export default async function FollowupPage({
   const { data: cliente, error } = await supabase
     .from("organizations")
     .select(
-      "id, name, followup_config, followup_mudar_status_a_partir, lembrete_reuniao_config",
+      "id, name, followup_config, followup_mudar_status_a_partir, lembrete_reuniao_config, mensagem_retomada, mensagem_retomada_usa_ia",
     )
     .eq("id", id)
     .single();
@@ -49,6 +49,12 @@ export default async function FollowupPage({
             cliente.followup_mudar_status_a_partir ?? 1
           }
           lembreteConfigInicial={cliente.lembrete_reuniao_config}
+          retomadaInicial={{
+            mensagem:
+              cliente.mensagem_retomada ??
+              "Oi {nome}! Como combinamos, voltando ao contato. Posso te apresentar a Facilita?",
+            usa_ia: cliente.mensagem_retomada_usa_ia ?? false,
+          }}
         />
       </div>
     </div>
