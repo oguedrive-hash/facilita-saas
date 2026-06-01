@@ -432,6 +432,19 @@ async function agendarPrimeiroFollowup(
   organizationId: string,
   leadId: string,
 ) {
+  // Se lead tem retomada agendada, NAO agenda follow-up — o worker de
+  // retomadas vai religar follow-up quando disparar a msg combinada.
+  // Isso evita follow-up "atropelar" o contato futuro programado.
+  const { data: leadCheck } = await supabase
+    .from("leads")
+    .select("proximo_contato_em")
+    .eq("id", leadId)
+    .single();
+  if (leadCheck?.proximo_contato_em) {
+    console.log("[caio:agendar]", leadId, "skipping — tem retomada agendada");
+    return;
+  }
+
   const { data: org } = await supabase
     .from("organizations")
     .select("followup_config")
