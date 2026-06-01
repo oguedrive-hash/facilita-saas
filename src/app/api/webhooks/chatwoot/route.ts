@@ -8,6 +8,7 @@ import {
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { transcreverAudio } from "@/lib/caio/openai";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
+import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
 import {
   enviarMensagem,
   enviarMensagemComAudio,
@@ -275,7 +276,9 @@ async function responderLeadAuto(
 ) {
   const { data: lead } = await supabase
     .from("leads")
-    .select("caio_ativo, chatwoot_conversation_id")
+    .select(
+      "nome, caio_ativo, chatwoot_conversation_id, aguardando_resposta_adiamento",
+    )
     .eq("id", leadId)
     .single();
 
@@ -288,7 +291,7 @@ async function responderLeadAuto(
   // Olha o tipo da última mensagem incoming pra decidir formato da resposta
   const { data: ultimaIncoming } = await supabase
     .from("mensagens")
-    .select("tipo")
+    .select("tipo, conteudo")
     .eq("lead_id", leadId)
     .eq("direcao", "entrada")
     .order("created_at", { ascending: false })
@@ -303,6 +306,18 @@ async function responderLeadAuto(
     .eq("id", leadId);
 
   try {
+    // Tenta detectar pedido de adiamento ANTES de responder normal
+    const tratouAdiamento = await tentarTratarAdiamento(
+      supabase,
+      organizationId,
+      leadId,
+      lead.nome ?? null,
+      lead.chatwoot_conversation_id,
+      lead.aguardando_resposta_adiamento ?? false,
+      ultimaIncoming?.conteudo ?? null,
+    );
+    if (tratouAdiamento) return; // Adiamento ja respondeu o lead, nao precisa mais nada
+
     await gerarERespondeCaio(
       supabase,
       organizationId,
@@ -319,6 +334,93 @@ async function responderLeadAuto(
       .update({ caio_processing_since: null })
       .eq("id", leadId);
   }
+}
+
+/**
+ * Detecta se a ultima msg do lead pede adiamento ou informa quando contatar.
+ * Retorna true se ja respondeu o lead (caso adiamento) — webhook nao precisa
+ * fazer mais nada. Retorna false pra fluxo normal de resposta.
+ */
+async function tentarTratarAdiamento(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+  nome: string | null,
+  conversationId: number,
+  aguardandoResposta: boolean,
+  ultimaMsg: string | null,
+): Promise<boolean> {
+  if (!ultimaMsg?.trim()) return false;
+
+  // Le contexto das ultimas 6 msgs pro classificador
+  const { data: msgs } = await supabase
+    .from("mensagens")
+    .select("direcao, conteudo")
+    .eq("lead_id", leadId)
+    .eq("shadow", false)
+    .order("created_at", { ascending: false })
+    .limit(6);
+  const contexto = (msgs ?? [])
+    .reverse()
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .join("\n");
+
+  const classif = await classificarAdiamento({
+    ultimaMensagem: ultimaMsg,
+    contextoAnterior: contexto,
+    aguardandoResposta,
+  });
+
+  const primeiroNome = nome?.split(" ")[0] || "tudo bem";
+
+  if (classif.intencao === "pede_adiamento_sem_data") {
+    // Caio pergunta quando — marca flag pra proxima msg ser interpretada como resposta
+    await supabase
+      .from("leads")
+      .update({ aguardando_resposta_adiamento: true })
+      .eq("id", leadId);
+    const texto = `Tranquilo, ${primeiroNome}! Quando posso te chamar?`;
+    await enviarMensagem({ conversationId, content: texto });
+    console.log("[caio:adiamento]", leadId, "perguntou quando");
+    return true;
+  }
+
+  if (classif.intencao === "informa_data") {
+    const momento = new Date(classif.momento_iso);
+    // Status pra contatar_futuramente, desliga followup, agenda retomada
+    await supabase
+      .from("leads")
+      .update({
+        status: "contatar_futuramente",
+        followup_ativo: false,
+        proximo_followup_em: null,
+        aguardando_resposta_adiamento: false,
+        proximo_contato_em: momento.toISOString(),
+        numero_followup: 0,
+      })
+      .eq("id", leadId);
+    const dataStr = momento.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
+    const texto = `Perfeito, ${primeiroNome}! Anotei aqui — te chamo no dia ${dataStr}. Até lá!`;
+    await enviarMensagem({ conversationId, content: texto });
+    console.log("[caio:adiamento]", leadId, "agendado pra", momento.toISOString());
+    return true;
+  }
+
+  // responde_normal — limpa flag de aguardando (caso estivesse setada e o lead
+  // ignorou a pergunta) e segue fluxo normal
+  if (aguardandoResposta) {
+    await supabase
+      .from("leads")
+      .update({ aguardando_resposta_adiamento: false })
+      .eq("id", leadId);
+  }
+  return false;
 }
 
 /**
