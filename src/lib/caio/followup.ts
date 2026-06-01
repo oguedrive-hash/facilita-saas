@@ -51,6 +51,7 @@ type LeadProcess = {
   chatwoot_conversation_id: number | null;
   caio_ativo: boolean | null;
   followup_ativo: boolean | null;
+  ultimo_followup_em: string | null;
 };
 
 /**
@@ -115,6 +116,29 @@ export async function processarFollowupLead(
   // Sem regra pra esse nivel → desistir ou tentar reativacao
   if (!regra) {
     return await processarFimRegras(lead, config);
+  }
+
+  // Recalcula dinamicamente o instante de disparo baseado na config atual.
+  // Se config mudou depois que proximo_followup_em foi setado, esse recalculo
+  // garante que o tempo correto seja respeitado.
+  // (so se aplica quando ja teve followup anterior, i.e. numero_followup >= 1)
+  if ((lead.numero_followup ?? 0) >= 1 && lead.ultimo_followup_em) {
+    const instanteCorreto = new Date(lead.ultimo_followup_em);
+    instanteCorreto.setDate(instanteCorreto.getDate() + (regra.esperar_dias ?? 0));
+    instanteCorreto.setHours(
+      instanteCorreto.getHours() + (regra.esperar_horas ?? 0),
+    );
+    instanteCorreto.setMinutes(
+      instanteCorreto.getMinutes() + (regra.esperar_minutos ?? 0),
+    );
+    if (instanteCorreto.getTime() > Date.now()) {
+      // Ainda nao chegou a hora segundo a config atual — reagenda e nao dispara
+      await supabase
+        .from("leads")
+        .update({ proximo_followup_em: instanteCorreto.toISOString() })
+        .eq("id", lead.id);
+      return { ok: true, acao: "desistencia" };
+    }
   }
 
   // Gera mensagem (IA ou template)
@@ -267,7 +291,7 @@ export async function processarFollowupsPendentes(): Promise<{
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, organization_id, numero_followup, chatwoot_conversation_id, caio_ativo, followup_ativo",
+      "id, nome, telefone, status, organization_id, numero_followup, chatwoot_conversation_id, caio_ativo, followup_ativo, ultimo_followup_em",
     )
     .eq("caio_ativo", true)
     .eq("followup_ativo", true)
