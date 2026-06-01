@@ -15,8 +15,13 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { enviarMensagem } from "@/lib/caio/chatwoot-api";
+import {
+  enviarMensagem,
+  enviarMensagemComAnexoUrl,
+  enviarMensagemComAudio,
+} from "@/lib/caio/chatwoot-api";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { logarEvento } from "@/lib/caio/eventos";
 
 type Regra = {
@@ -27,6 +32,9 @@ type Regra = {
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
+  tipo_midia?: "texto" | "audio" | "imagem" | "video";
+  attachment_url?: string | null;
+  attachment_mime?: string | null;
 };
 
 type Reativacao = {
@@ -156,11 +164,74 @@ export async function processarFollowupLead(
     texto = aplicarTemplate(regra.mensagem, lead);
   }
 
-  // Envia pelo Chatwoot
-  const sent = await enviarMensagem({
-    conversationId: lead.chatwoot_conversation_id,
-    content: texto,
-  });
+  // Envia pelo Chatwoot — formato varia por tipo_midia
+  const tipoMidia = regra.tipo_midia ?? "texto";
+  let sent: { id?: number } | { error: string };
+
+  if (tipoMidia === "audio") {
+    // TTS via ElevenLabs + envio como audio
+    const { data: orgVoz } = await supabase
+      .from("organizations")
+      .select("voice_id, voice_settings")
+      .eq("id", lead.organization_id)
+      .single();
+    const tts = await gerarAudio({
+      texto,
+      voiceId: orgVoz?.voice_id ?? undefined,
+      voiceSettings: orgVoz?.voice_settings ?? null,
+    });
+    if ("error" in tts) {
+      console.warn(
+        "[followup:audio]",
+        lead.id,
+        "TTS falhou, caindo pra texto:",
+        tts.error,
+      );
+      sent = await enviarMensagem({
+        conversationId: lead.chatwoot_conversation_id,
+        content: texto,
+      });
+    } else {
+      sent = await enviarMensagemComAudio({
+        conversationId: lead.chatwoot_conversation_id,
+        audio: tts.audio,
+        filename: "followup.mp3",
+        mimeType: tts.mimeType,
+      });
+      if ("error" in sent) {
+        // Fallback texto se audio falhou
+        sent = await enviarMensagem({
+          conversationId: lead.chatwoot_conversation_id,
+          content: texto,
+        });
+      }
+    }
+  } else if (
+    (tipoMidia === "imagem" || tipoMidia === "video") &&
+    regra.attachment_url &&
+    regra.attachment_mime
+  ) {
+    sent = await enviarMensagemComAnexoUrl({
+      conversationId: lead.chatwoot_conversation_id,
+      url: regra.attachment_url,
+      mimeType: regra.attachment_mime,
+      caption: texto,
+    });
+    if ("error" in sent) {
+      // Fallback texto se anexo falhou
+      sent = await enviarMensagem({
+        conversationId: lead.chatwoot_conversation_id,
+        content: texto,
+      });
+    }
+  } else {
+    // texto (ou imagem/video sem anexo configurado)
+    sent = await enviarMensagem({
+      conversationId: lead.chatwoot_conversation_id,
+      content: texto,
+    });
+  }
+
   if ("error" in sent) {
     return { error: `envio falhou: ${sent.error}` };
   }

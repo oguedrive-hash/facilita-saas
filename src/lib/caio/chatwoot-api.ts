@@ -151,6 +151,87 @@ export async function enviarMensagemComAudio(opts: {
 }
 
 /**
+ * Envia mensagem com anexo a partir de uma URL externa (Supabase Storage etc).
+ * Baixa o arquivo e envia como multipart pro Chatwoot.
+ *
+ * Usado pra mandar imagens/videos pre-carregados em regras de follow-up.
+ */
+export async function enviarMensagemComAnexoUrl(opts: {
+  conversationId: number;
+  url: string;
+  mimeType: string;
+  caption?: string;
+}): Promise<{ id: number } | { error: string }> {
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  // Baixa o arquivo da URL
+  const dl = await safeFetch(opts.url);
+  if ("error" in dl) return { error: `Falha ao baixar anexo: ${dl.error}` };
+  if (!dl.ok) {
+    return { error: `Anexo retornou ${dl.status} ao baixar` };
+  }
+  const buf = await dl.arrayBuffer();
+
+  // Define extensão pelo mime
+  const extMap: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+  };
+  const ext = extMap[opts.mimeType] ?? "bin";
+  const filename = `anexo.${ext}`;
+
+  const form = new FormData();
+  form.set("message_type", "outgoing");
+  form.set("private", "false");
+  if (opts.caption) form.set("content", opts.caption);
+  const blob = new Blob([buf], { type: opts.mimeType });
+  const file = new File([blob], filename, { type: opts.mimeType });
+  form.append("attachments[]", file);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/conversations/${opts.conversationId}/messages`,
+      {
+        method: "POST",
+        headers: { api_access_token: token },
+        body: form,
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        error: `Chatwoot ${res.status}: ${text.slice(0, 300)}`,
+      };
+    }
+    const data = (await res.json()) as { id: number };
+    return { id: data.id };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      return { error: "Chatwoot timeout (45s) enviando anexo" };
+    }
+    return {
+      error: err instanceof Error ? err.message : "fetch failed",
+    };
+  }
+}
+
+/**
  * Aplica (substitui) etiquetas numa conversa.
  */
 export async function setLabels(opts: {

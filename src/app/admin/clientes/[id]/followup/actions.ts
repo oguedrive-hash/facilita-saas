@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
+export type TipoMidia = "texto" | "audio" | "imagem" | "video";
+
 export type FollowupRegra = {
   nivel: number;
   esperar_dias: number;
@@ -11,6 +13,9 @@ export type FollowupRegra = {
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
+  tipo_midia: TipoMidia;
+  attachment_url: string | null;
+  attachment_mime: string | null;
 };
 
 export type FollowupReativacao = {
@@ -72,17 +77,28 @@ export async function salvarFollowupConfig(
   // Sanitiza: clamp valores, re-numera níveis sequencialmente
   const clamp = (n: number, min: number, max: number) =>
     Math.max(min, Math.min(max, n));
+  const tiposValidos: TipoMidia[] = ["texto", "audio", "imagem", "video"];
   const regrasLimpas = config.regras
     .filter((r) => r.mensagem?.trim().length > 0)
-    .map((r, i) => ({
-      nivel: i + 1,
-      esperar_dias: Math.round(clamp(r.esperar_dias ?? 0, 0, 365)),
-      esperar_horas: Math.round(clamp(r.esperar_horas ?? 0, 0, 24)),
-      esperar_minutos: Math.round(clamp(r.esperar_minutos ?? 0, 0, 59)),
-      mensagem: r.mensagem.trim(),
-      usa_ia: !!r.usa_ia,
-      ativo: r.ativo !== false,
-    }));
+    .map((r, i) => {
+      const tipoMidia: TipoMidia = tiposValidos.includes(r.tipo_midia)
+        ? r.tipo_midia
+        : "texto";
+      const precisaAttachment =
+        tipoMidia === "imagem" || tipoMidia === "video";
+      return {
+        nivel: i + 1,
+        esperar_dias: Math.round(clamp(r.esperar_dias ?? 0, 0, 365)),
+        esperar_horas: Math.round(clamp(r.esperar_horas ?? 0, 0, 24)),
+        esperar_minutos: Math.round(clamp(r.esperar_minutos ?? 0, 0, 59)),
+        mensagem: r.mensagem.trim(),
+        usa_ia: !!r.usa_ia,
+        ativo: r.ativo !== false,
+        tipo_midia: tipoMidia,
+        attachment_url: precisaAttachment ? (r.attachment_url ?? null) : null,
+        attachment_mime: precisaAttachment ? (r.attachment_mime ?? null) : null,
+      };
+    });
 
   const reativacaoLimpa: FollowupReativacao = {
     ativa: !!config.reativacao?.ativa,
