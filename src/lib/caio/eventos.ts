@@ -14,7 +14,8 @@ export type TipoEvento =
   | "lembrete_enviado"
   | "msg_painel"
   | "lead_criado"
-  | "reativacao_enviada";
+  | "reativacao_enviada"
+  | "prospeccao_enviada";
 
 export async function logarEvento(opts: {
   leadId: string;

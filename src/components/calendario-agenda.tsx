@@ -187,7 +187,7 @@ function CardMini({ agendamento }: { agendamento: Agendamento }) {
   const cor = STATUS_COR[agendamento.status] ?? "bg-cinza-medio";
   return (
     <Link
-      href={`/dashboard/leads/${agendamento.lead_id}`}
+      href={`/dashboard/contatos/${agendamento.lead_id}`}
       className="flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-offwhite transition"
       title={`${hora} — ${agendamento.lead_nome ?? agendamento.lead_telefone}`}
     >

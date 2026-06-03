@@ -20,7 +20,6 @@ type ClienteData = {
   email_contato: string;
   whatsapp_numero: string | null;
   plano: string;
-  prompt_system: string | null;
   voice_id: string | null;
   voice_settings: VoiceSettings | null;
   caio_debounce_segundos: number | null;
@@ -210,25 +209,17 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
             </p>
           </div>
 
-          <div>
-            <label
-              htmlFor="prompt_system"
-              className="block text-sm font-heading font-semibold text-preto mb-1.5"
-            >
-              System Prompt do Caio
-            </label>
-            <textarea
-              id="prompt_system"
-              name="prompt_system"
-              rows={12}
-              defaultValue={cliente.prompt_system ?? ""}
-              placeholder="Você é o Caio, atendente IA da [Empresa]..."
-              className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition font-mono text-xs leading-relaxed"
-            />
-            <p className="text-xs text-cinza-medio mt-1">
-              Prompt completo do agente. Inclui identidade, tom de voz, regras,
-              frases TINTIN, etc.
+          <div className="p-4 rounded-lg bg-offwhite border border-cinza-claro">
+            <p className="text-sm text-preto mb-2">
+              <strong>Configuração do Caio</strong> (prompts e base de
+              conhecimento) ficam em uma página dedicada:
             </p>
+            <a
+              href={`/admin/clientes/${cliente.id}/caio`}
+              className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+            >
+              Abrir configuração do Caio →
+            </a>
           </div>
         </div>
       </section>

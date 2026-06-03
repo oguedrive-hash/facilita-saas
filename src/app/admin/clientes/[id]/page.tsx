@@ -68,10 +68,22 @@ export default async function ClienteDetalhePage({
             <PlanoLabel plano={cliente.plano} />
             <div className="flex items-center gap-3 mt-2">
               <Link
+                href={`/admin/clientes/${cliente.id}/caio`}
+                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+              >
+                Caio →
+              </Link>
+              <Link
                 href={`/admin/clientes/${cliente.id}/followup`}
                 className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
               >
                 Follow-up →
+              </Link>
+              <Link
+                href={`/admin/clientes/${cliente.id}/prospeccao`}
+                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+              >
+                Prospecção →
               </Link>
               <Link
                 href={`/admin/clientes/${cliente.id}/editar`}
@@ -114,17 +126,48 @@ export default async function ClienteDetalhePage({
           </dl>
         </Card>
 
-        {/* Prompt do agente */}
-        <Card titulo="Prompt do Caio">
-          {cliente.prompt_system ? (
-            <div className="bg-offwhite p-4 rounded-lg text-xs font-mono text-cinza-medio max-h-64 overflow-y-auto">
-              {cliente.prompt_system}
-            </div>
-          ) : (
-            <p className="text-sm text-cinza-medio">
-              Nenhum prompt configurado ainda. Será adicionado em breve.
-            </p>
-          )}
+        {/* Status da configuração do Caio */}
+        <Card titulo="Configuração do Caio">
+          <ul className="text-sm space-y-1.5">
+            <li className="flex items-center gap-2">
+              <span>{cliente.prompt_system ? "✓" : "✕"}</span>
+              <span
+                className={
+                  cliente.prompt_system ? "text-preto" : "text-cinza-medio"
+                }
+              >
+                Comportamento Inbound
+              </span>
+            </li>
+            <li className="flex items-center gap-2">
+              <span>{cliente.prompt_system_prospeccao ? "✓" : "✕"}</span>
+              <span
+                className={
+                  cliente.prompt_system_prospeccao
+                    ? "text-preto"
+                    : "text-cinza-medio"
+                }
+              >
+                Comportamento Prospecção
+              </span>
+            </li>
+            <li className="flex items-center gap-2">
+              <span>{cliente.base_conhecimento ? "✓" : "✕"}</span>
+              <span
+                className={
+                  cliente.base_conhecimento ? "text-preto" : "text-cinza-medio"
+                }
+              >
+                Base de Conhecimento
+              </span>
+            </li>
+          </ul>
+          <Link
+            href={`/admin/clientes/${cliente.id}/caio`}
+            className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold mt-3 inline-block"
+          >
+            Editar →
+          </Link>
         </Card>
       </div>
 

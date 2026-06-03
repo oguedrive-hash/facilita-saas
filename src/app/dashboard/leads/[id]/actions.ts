@@ -114,7 +114,7 @@ export async function responderLead(formData: FormData): Promise<
     meta: { conteudo: conteudo.trim().slice(0, 200) },
   });
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   return { ok: true };
 }
 
@@ -187,7 +187,7 @@ export async function toggleCaio(formData: FormData): Promise<
     });
   }
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   revalidatePath("/dashboard/leads");
   // ativo = caio respondendo = NÃO tem agente-off (depois da troca)
   return { ok: true, ativo: temAgenteOff };
@@ -246,13 +246,23 @@ export async function mudarStatusLead(formData: FormData): Promise<
 
   // Regras de follow-up automaticas por mudanca manual de status:
   // - novo_lead / em_conversa: desliga + zera regras
+  // - aguardando_primeiro_contato: reseta contadores de prospeccao pra que o
+  //   proximo disparo comece da regra 1
   // - followup: liga, mantem nivel atual (continua de onde tava); se nunca rodou,
   //   agenda 1a regra
   // - reuniao_agendada / contatar_futuramente / fechou / perdido: desliga + zera
   if (statusNovo === "em_conversa" || statusNovo === "novo_lead") {
     update.followup_ativo = false;
     update.numero_followup = 0;
+    update.numero_reativacao = 0;
     update.proximo_followup_em = null;
+  } else if (statusNovo === "aguardando_primeiro_contato") {
+    update.numero_prospeccao = 0;
+    update.numero_followup = 0;
+    update.numero_reativacao = 0;
+    update.proximo_followup_em = null;
+    update.caio_ativo = true;
+    update.followup_ativo = true;
   } else if (statusNovo === "followup") {
     update.followup_ativo = true;
     // Se nunca rodou follow-up, agendar 1a regra agora
@@ -293,10 +303,16 @@ export async function mudarStatusLead(formData: FormData): Promise<
         update.proximo_followup_em = proximoEm.toISOString();
       }
     }
+  } else if (statusNovo === "em_prospeccao") {
+    // Continua na cadencia de prospeccao — nao mexe em numero_prospeccao
+    // pra nao perder progresso. Garante Caio ligado.
+    update.caio_ativo = true;
+    update.followup_ativo = true;
   } else {
     // reuniao_agendada, contatar_futuramente, fechou, perdido
     update.followup_ativo = false;
     update.numero_followup = 0;
+    update.numero_reativacao = 0;
     update.proximo_followup_em = null;
   }
 
@@ -342,7 +358,7 @@ export async function mudarStatusLead(formData: FormData): Promise<
     });
   }
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   revalidatePath("/dashboard/leads");
   return { ok: true };
 }
@@ -439,7 +455,7 @@ export async function gerarResumoIA(formData: FormData): Promise<
     })
     .eq("id", leadId);
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   return { ok: true, resumo: result.content };
 }
 
@@ -523,7 +539,7 @@ export async function aprovarShadow(formData: FormData): Promise<
     .update({ caio_ativo: false })
     .eq("id", msg.lead_id);
 
-  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  revalidatePath(`/dashboard/contatos/${msg.lead_id}`);
   revalidatePath("/dashboard/leads");
   return { ok: true };
 }
@@ -551,7 +567,7 @@ export async function descartarShadow(formData: FormData): Promise<
   const admin = createAdminClient();
   await admin.from("mensagens").delete().eq("id", mensagemId);
 
-  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  revalidatePath(`/dashboard/contatos/${msg.lead_id}`);
   return { ok: true };
 }
 
@@ -589,7 +605,7 @@ export async function retranscreverAudio(formData: FormData): Promise<
     .update({ conteudo: result.texto })
     .eq("id", mensagemId);
 
-  revalidatePath(`/dashboard/leads/${msg.lead_id}`);
+  revalidatePath(`/dashboard/contatos/${msg.lead_id}`);
   return { ok: true, texto: result.texto };
 }
 
@@ -617,7 +633,7 @@ export async function salvarNotas(formData: FormData): Promise<
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   return { ok: true };
 }
 
@@ -710,6 +726,6 @@ export async function toggleFollowupAtivo(formData: FormData): Promise<
     });
   }
 
-  revalidatePath(`/dashboard/leads/${leadId}`);
+  revalidatePath(`/dashboard/contatos/${leadId}`);
   return { ok: true };
 }

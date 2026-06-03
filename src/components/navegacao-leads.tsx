@@ -35,10 +35,10 @@ export function NavegacaoLeads({
       }
       if (e.key === "ArrowLeft" && anteriorId) {
         e.preventDefault();
-        router.push(`/dashboard/leads/${anteriorId}`);
+        router.push(`/dashboard/contatos/${anteriorId}`);
       } else if (e.key === "ArrowRight" && proximoId) {
         e.preventDefault();
-        router.push(`/dashboard/leads/${proximoId}`);
+        router.push(`/dashboard/contatos/${proximoId}`);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -48,7 +48,7 @@ export function NavegacaoLeads({
   return (
     <div className="flex items-center gap-2">
       <NavButton
-        href={anteriorId ? `/dashboard/leads/${anteriorId}` : null}
+        href={anteriorId ? `/dashboard/contatos/${anteriorId}` : null}
         label="← Anterior"
         title="Lead anterior (←)"
       />
@@ -56,7 +56,7 @@ export function NavegacaoLeads({
         {posicao} / {total}
       </span>
       <NavButton
-        href={proximoId ? `/dashboard/leads/${proximoId}` : null}
+        href={proximoId ? `/dashboard/contatos/${proximoId}` : null}
         label="Próximo →"
         title="Próximo lead (→)"
       />

@@ -15,6 +15,7 @@ const ICONE_POR_TIPO: Record<string, string> = {
   msg_painel: "💬",
   lead_criado: "✨",
   reativacao_enviada: "🔄",
+  prospeccao_enviada: "🎯",
 };
 
 const COR_POR_TIPO: Record<string, string> = {
@@ -26,6 +27,7 @@ const COR_POR_TIPO: Record<string, string> = {
   msg_painel: "text-preto",
   lead_criado: "text-emerald-700",
   reativacao_enviada: "text-amber-700",
+  prospeccao_enviada: "text-blue-700",
 };
 
 export function TimelineEventos({ eventos }: { eventos: Evento[] }) {

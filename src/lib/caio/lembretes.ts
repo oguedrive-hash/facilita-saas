@@ -8,9 +8,12 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { logarEvento } from "@/lib/caio/eventos";
+import {
+  enviarComMidia,
+  type TipoMidia,
+} from "@/lib/caio/enviar-com-midia";
 
 type RegraLembrete = {
   nivel: number;
@@ -21,6 +24,9 @@ type RegraLembrete = {
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
+  tipo_midia?: TipoMidia;
+  attachment_url?: string | null;
+  attachment_mime?: string | null;
 };
 
 type LembreteConfig = {
@@ -155,9 +161,13 @@ export async function processarLembretesPendentes(): Promise<{
         );
       }
 
-      const sent = await enviarMensagem({
+      const sent = await enviarComMidia({
         conversationId: ag.lead.chatwoot_conversation_id,
-        content: texto,
+        organizationId: ag.organization_id,
+        texto,
+        tipoMidia: regra.tipo_midia ?? "texto",
+        attachmentUrl: regra.attachment_url ?? null,
+        attachmentMime: regra.attachment_mime ?? null,
       });
       if ("error" in sent) {
         console.error(

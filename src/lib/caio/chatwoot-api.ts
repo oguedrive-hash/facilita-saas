@@ -8,6 +8,8 @@
  * (DNS, timeout, Chatwoot offline) não derrubam páginas inteiras.
  */
 
+import { createAdminClient } from "@/lib/supabase/admin";
+
 function config() {
   // trim pra remover espaços que podem entrar por copy/paste no Vercel UI
   const url = (process.env.CHATWOOT_URL ?? "").trim().replace(/\/+$/, "");
@@ -344,4 +346,164 @@ export async function toggleConversationStatus(opts: {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Cria uma conversa nova no inbox da org pra um lead de prospeccao
+ * (lead nunca interagiu — precisa criar contato + conversa antes de mandar msg).
+ *
+ * Telefone deve estar em E.164 (5511999998888).
+ *
+ * Estrategia: tenta criar o contato (POST /contacts). Se o telefone ja existir
+ * no Chatwoot, a API retorna 422 — nesse caso recuperamos via search e
+ * reusamos. Depois cria conversa associando contact + inbox da org.
+ */
+export async function criarConversaProspeccao(opts: {
+  organizationId: string;
+  telefone: string;
+  nome: string;
+}): Promise<{ conversationId: number } | { error: string }> {
+  let baseUrl: string;
+  let token: string;
+  try {
+    ({ baseUrl, token } = config());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  // Pega inbox_id da org
+  const admin = createAdminClient();
+  const { data: org } = await admin
+    .from("organizations")
+    .select("chatwoot_inbox_id")
+    .eq("id", opts.organizationId)
+    .single();
+  const inboxId = org?.chatwoot_inbox_id;
+  if (!inboxId) {
+    return {
+      error: `Org ${opts.organizationId} não tem chatwoot_inbox_id configurado`,
+    };
+  }
+
+  const telefoneE164 = opts.telefone.startsWith("+")
+    ? opts.telefone
+    : `+${opts.telefone}`;
+
+  // Step 1: cria ou recupera contato
+  let contactId: number | undefined;
+  const createContactRes = await safeFetch(`${baseUrl}/contacts`, {
+    method: "POST",
+    headers: {
+      api_access_token: token,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      name: opts.nome || telefoneE164,
+      phone_number: telefoneE164,
+    }),
+  });
+  if ("error" in createContactRes) return createContactRes;
+
+  if (createContactRes.ok) {
+    const data = (await createContactRes.json()) as {
+      payload?: { contact?: { id: number } };
+    };
+    contactId = data.payload?.contact?.id;
+  } else if (createContactRes.status === 422) {
+    // Contato ja existe — busca pelo telefone
+    const searchRes = await safeFetch(
+      `${baseUrl}/contacts/search?q=${encodeURIComponent(telefoneE164)}&include=contact_inboxes`,
+      {
+        headers: { api_access_token: token },
+      },
+    );
+    if ("error" in searchRes) return searchRes;
+    if (!searchRes.ok) {
+      const text = await searchRes.text();
+      return {
+        error: `Chatwoot search ${searchRes.status}: ${text.slice(0, 300)}`,
+      };
+    }
+    const data = (await searchRes.json()) as {
+      payload?: { id: number; phone_number?: string }[];
+    };
+    const match = data.payload?.find(
+      (c) => c.phone_number === telefoneE164,
+    );
+    contactId = match?.id;
+  } else {
+    const text = await createContactRes.text();
+    return {
+      error: `Chatwoot create contact ${createContactRes.status}: ${text.slice(0, 300)}`,
+    };
+  }
+
+  if (!contactId) {
+    return { error: "Não conseguiu obter contact_id" };
+  }
+
+  // Step 2: garante contact_inbox (associa contato ao inbox)
+  const ciRes = await safeFetch(
+    `${baseUrl}/contacts/${contactId}/contact_inboxes`,
+    {
+      method: "POST",
+      headers: {
+        api_access_token: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        source_id: telefoneE164,
+      }),
+    },
+  );
+  if ("error" in ciRes) return ciRes;
+  if (!ciRes.ok && ciRes.status !== 422) {
+    const text = await ciRes.text();
+    return {
+      error: `Chatwoot contact_inboxes ${ciRes.status}: ${text.slice(0, 300)}`,
+    };
+  }
+  let sourceId = telefoneE164;
+  if (ciRes.ok) {
+    try {
+      const ciData = (await ciRes.json()) as { source_id?: string };
+      if (ciData.source_id) sourceId = ciData.source_id;
+    } catch {
+      // ignora
+    }
+  }
+
+  // Step 3: cria conversa
+  const convRes = await safeFetch(`${baseUrl}/conversations`, {
+    method: "POST",
+    headers: {
+      api_access_token: token,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: inboxId,
+      contact_id: contactId,
+      status: "open",
+    }),
+  });
+  if ("error" in convRes) return convRes;
+  if (!convRes.ok) {
+    const text = await convRes.text();
+    return {
+      error: `Chatwoot create conversation ${convRes.status}: ${text.slice(0, 300)}`,
+    };
+  }
+  try {
+    const data = (await convRes.json()) as { id: number };
+    return { conversationId: data.id };
+  } catch (e) {
+    return {
+      error: `Resposta inesperada do Chatwoot: ${
+        e instanceof Error ? e.message : "json invalido"
+      }`,
+    };
+  }
 }

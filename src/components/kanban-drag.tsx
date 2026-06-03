@@ -3,7 +3,7 @@
 import { useState, type DragEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
+import { STATUS_CONFIG, STATUS_ORDEM, type StatusLead } from "@/lib/status-config";
 import { mudarStatusLead } from "@/app/dashboard/leads/[id]/actions";
 
 type Lead = {
@@ -17,7 +17,15 @@ type Lead = {
   updated_at: string;
 };
 
-export function KanbanDrag({ leads }: { leads: Lead[] }) {
+export function KanbanDrag({
+  leads,
+  colunas,
+}: {
+  leads: Lead[];
+  // Lista de colunas a exibir. Default: STATUS_ORDEM (fluxo inbound).
+  // Pra prospeccao passar lista incluindo aguardando_primeiro_contato e em_prospeccao.
+  colunas?: StatusLead[];
+}) {
   const router = useRouter();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<StatusLead | null>(null);
@@ -29,21 +37,19 @@ export function KanbanDrag({ leads }: { leads: Lead[] }) {
   const effectiveStatus = (lead: Lead): StatusLead =>
     (optimisticStatus[lead.id] ?? lead.status) as StatusLead;
 
+  const ordens = colunas ?? STATUS_ORDEM;
+
   const porStatus: Record<StatusLead, Lead[]> = {} as Record<
     StatusLead,
     Lead[]
   >;
-  (Object.keys(STATUS_CONFIG) as StatusLead[]).forEach((s) => {
+  ordens.forEach((s) => {
     porStatus[s] = [];
   });
   leads.forEach((l) => {
     const s = effectiveStatus(l);
     if (porStatus[s]) porStatus[s].push(l);
   });
-
-  const ordens = (Object.keys(STATUS_CONFIG) as StatusLead[]).sort(
-    (a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem,
-  );
 
   function onDragStart(e: DragEvent<HTMLDivElement>, leadId: string) {
     e.dataTransfer.setData("text/plain", leadId);
@@ -150,7 +156,7 @@ export function KanbanDrag({ leads }: { leads: Lead[] }) {
                     }`}
                   >
                     <Link
-                      href={`/dashboard/leads/${lead.id}`}
+                      href={`/dashboard/contatos/${lead.id}`}
                       draggable={false}
                       onClick={(e) => {
                         // Se ainda tava arrastando, ignora click

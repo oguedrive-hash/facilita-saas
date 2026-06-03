@@ -48,12 +48,14 @@ export async function GET(request: NextRequest) {
   const ate = sp.get("ate") ?? "";
   const sortField = sp.get("sort") ?? "updated_at";
   const sortOrder = (sp.get("order") ?? "desc") === "asc";
+  const origem = sp.get("origem") ?? "inbound";
 
   let query = supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, source, caio_ativo, numero_followup, razao, created_at, updated_at",
+      "id, nome, telefone, status, source, origem, caio_ativo, numero_followup, razao, created_at, updated_at",
     )
+    .eq("origem", origem)
     .order(sortField, { ascending: sortOrder })
     .limit(5000); // limite de segurança
 

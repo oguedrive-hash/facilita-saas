@@ -18,6 +18,7 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
   useEffect(() => {
     const supabase = createClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelado = false;
 
     // Propaga JWT do user autenticado pro Realtime — sem isso o canal
     // conecta como anon e a RLS bloqueia os eventos (is_admin() = false).
@@ -25,9 +26,13 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      // Se cleanup rodou enquanto getSession aguardava (StrictMode dev),
+      // aborta — senao criamos um channel orfao que vaza.
+      if (cancelado) return;
       if (session) {
         supabase.realtime.setAuth(session.access_token);
       }
+      if (cancelado) return;
 
       channel = supabase
         .channel(`lead-${leadId}`)
@@ -55,6 +60,7 @@ export function RealtimeLeadUpdates({ leadId }: { leadId: string }) {
     })();
 
     return () => {
+      cancelado = true;
       if (channel) supabase.removeChannel(channel);
     };
   }, [leadId, router]);

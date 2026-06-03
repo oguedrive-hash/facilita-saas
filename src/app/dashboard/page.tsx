@@ -35,7 +35,8 @@ export default async function DashboardPage() {
   const [{ data: leads }, { data: msgsRecentes }] = await Promise.all([
     supabase
       .from("leads")
-      .select("id, nome, telefone, status, caio_ativo, created_at, updated_at"),
+      .select("id, nome, telefone, status, caio_ativo, created_at, updated_at")
+      .eq("origem", "inbound"),
     // Mensagens últimos 7d pra hora de pico + tempo de resposta
     supabase
       .from("mensagens")
@@ -310,7 +311,7 @@ export default async function DashboardPage() {
             {leadsRecentes.map((l) => (
               <li key={l.id}>
                 <Link
-                  href={`/dashboard/leads/${l.id}`}
+                  href={`/dashboard/contatos/${l.id}`}
                   className="flex items-center justify-between gap-3 py-3 hover:bg-offwhite/50 transition px-2 -mx-2 rounded-lg"
                 >
                   <div className="flex-1 min-w-0">

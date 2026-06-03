@@ -5,6 +5,7 @@ import { mudarStatusLead } from "@/app/dashboard/leads/[id]/actions";
 import {
   STATUS_CONFIG,
   STATUS_ORDEM,
+  STATUS_PROSPECCAO_ORDEM,
   type StatusLead,
 } from "@/lib/status-config";
 
@@ -13,10 +14,24 @@ const STATUS_TERMINAIS: StatusLead[] = ["fechou", "perdido"];
 export function StatusSelector({
   leadId,
   statusAtual,
+  incluirProspeccao = false,
 }: {
   leadId: string;
   statusAtual: StatusLead;
+  // Quando true, lista tambem os status exclusivos de prospeccao
+  // (aguardando_primeiro_contato, em_prospeccao). Default falso pra paginas
+  // de leads inbound nao mostrarem essas opcoes.
+  incluirProspeccao?: boolean;
 }) {
+  // Se o status atual ja eh um de prospeccao OU foi pedido explicitamente,
+  // mostra todos os status (inbound + outbound) — assim o user pode voltar
+  // pra inbound se quiser e vice-versa.
+  const mostrarTodos =
+    incluirProspeccao ||
+    (STATUS_PROSPECCAO_ORDEM as StatusLead[]).includes(statusAtual);
+  const opcoes: StatusLead[] = mostrarTodos
+    ? [...STATUS_PROSPECCAO_ORDEM, ...STATUS_ORDEM]
+    : STATUS_ORDEM;
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
@@ -84,7 +99,7 @@ export function StatusSelector({
             <p className="px-3 py-2 text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider border-b border-cinza-claro">
               Mudar status pra
             </p>
-            {STATUS_ORDEM.map((s) => {
+            {opcoes.map((s) => {
               const c = STATUS_CONFIG[s];
               const ativo = s === statusAtual;
               return (

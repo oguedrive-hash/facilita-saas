@@ -42,7 +42,9 @@ export default async function DashboardLayout({
               <NavLink href="/dashboard" exact>
                 Dashboard
               </NavLink>
-              <NavLink href="/dashboard/leads">Leads</NavLink>
+              <NavLink href="/dashboard/contatos">Contatos</NavLink>
+              <NavLink href="/dashboard/leads">Inbound</NavLink>
+              <NavLink href="/dashboard/prospeccao">Prospecção</NavLink>
               <NavLink href="/dashboard/agenda">Agenda</NavLink>
               {profile?.role === "admin" && (
                 <NavLink href="/admin" variant="admin">

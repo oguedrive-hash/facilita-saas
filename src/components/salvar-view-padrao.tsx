@@ -7,9 +7,14 @@ type View = "lista" | "kanban";
 
 export function SalvarViewPadrao({
   viewSalva,
+  cookieName,
+  pathRevalidate,
 }: {
   viewAtual: View;
   viewSalva: View | null;
+  // Defaults pra pagina de leads; passar pra outras telas (prospecção, etc).
+  cookieName?: string;
+  pathRevalidate?: string;
 }) {
   const [aberto, setAberto] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -27,7 +32,7 @@ export function SalvarViewPadrao({
 
   function fixarComo(view: View) {
     startTransition(async () => {
-      await setViewPreferida(view);
+      await setViewPreferida(view, { cookieName, pathRevalidate });
       setAberto(false);
     });
   }

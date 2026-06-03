@@ -20,7 +20,7 @@ export async function gerarRespostaCaio(opts: {
   const [{ data: lead }, { data: mensagens }] = await Promise.all([
     supabase
       .from("leads")
-      .select("nome, organization_id")
+      .select("nome, organization_id, origem, dados_extras")
       .eq("id", opts.leadId)
       .single(),
     supabase
@@ -45,15 +45,35 @@ export async function gerarRespostaCaio(opts: {
   }
   const { data: org } = await supabase
     .from("organizations")
-    .select("prompt_system")
+    .select("prompt_system, prompt_system_prospeccao, base_conhecimento")
     .eq("id", lead.organization_id)
     .single();
-  if (!org?.prompt_system?.trim()) {
+  // Comportamento (como Caio age) varia por canal. Base de conhecimento
+  // (o que Caio sabe sobre a empresa) é compartilhada.
+  //   - prospeccao + comportamento de prospeccao preenchido → usa ele
+  //   - resto → usa o inbound padrao
+  // Se prospeccao sem comportamento proprio, cai no inbound — pelo menos
+  // tem instrucao base, e o bloco de contexto que adicionamos abaixo
+  // (`extras`) reforca que o canal e prospeccao.
+  const ehProspeccao = lead?.origem === "prospeccao";
+  const comportamentoProsp = org?.prompt_system_prospeccao?.trim();
+  const comportamentoInbound = org?.prompt_system?.trim();
+  const comportamento =
+    ehProspeccao && comportamentoProsp
+      ? comportamentoProsp
+      : comportamentoInbound;
+  if (!comportamento) {
     return {
-      error: "Organization sem prompt_system configurado — configure no painel",
+      error:
+        "Organization sem prompt configurado — configure em Admin → Caio",
     };
   }
-  const promptBase = org.prompt_system;
+  const baseConhecimento = org?.base_conhecimento?.trim();
+  // Junta comportamento + base (com separador legivel). Base entra como
+  // bloco rotulado pra ficar claro pro modelo onde estao os fatos.
+  const promptBase = baseConhecimento
+    ? `${comportamento}\n\n[Base de Conhecimento da empresa — use SOMENTE essas informações como fonte de verdade, não invente outras]\n${baseConhecimento}`
+    : comportamento;
 
   const historico: ChatMessage[] = mensagens.map((m) => {
     let content: string;
@@ -70,9 +90,31 @@ export async function gerarRespostaCaio(opts: {
     };
   });
 
-  const systemContent = lead?.nome
-    ? `${promptBase}\n\n[Contexto: o lead se chama ${lead.nome}. Use o nome quando fizer sentido.]`
-    : promptBase;
+  // Anexos contextuais ao prompt
+  const extras: string[] = [];
+  if (lead?.nome) {
+    extras.push(
+      `O lead se chama ${lead.nome}. Use o nome quando fizer sentido.`,
+    );
+  }
+  if (lead?.origem === "prospeccao") {
+    extras.push(
+      `Esse lead veio de prospecção ativa — VOCÊ iniciou o contato, ele NÃO entrou em contato com a gente primeiro. NÃO diga "obrigado por entrar em contato" ou frases similares. Trate como continuação natural do contato que você começou.`,
+    );
+    const dadosExtras = lead.dados_extras as Record<string, string> | null;
+    if (dadosExtras && Object.keys(dadosExtras).length > 0) {
+      const linhasExtras = Object.entries(dadosExtras)
+        .map(([k, v]) => `  - ${k}: ${v}`)
+        .join("\n");
+      extras.push(
+        `Dados conhecidos sobre o lead (use quando relevante):\n${linhasExtras}`,
+      );
+    }
+  }
+  const systemContent =
+    extras.length > 0
+      ? `${promptBase}\n\n[Contexto:\n${extras.join("\n\n")}]`
+      : promptBase;
 
   const result = await chatCompletion({
     messages: [{ role: "system", content: systemContent }, ...historico],

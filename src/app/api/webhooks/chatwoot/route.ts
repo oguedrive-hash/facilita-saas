@@ -103,14 +103,42 @@ async function processWebhook(webhook: ChatwootWebhook) {
   // Lead respondeu — zera o ciclo de follow-up e atualiza ultima_msg_lead_em.
   // (Roda em paralelo com a geracao da resposta pra nao atrasar.)
   if (leadsComIncomingNova.size > 0) {
+    const ids = Array.from(leadsComIncomingNova);
     await supabase
       .from("leads")
       .update({
         numero_followup: 0,
+        numero_reativacao: 0,
+        numero_prospeccao: 0,
         proximo_followup_em: null,
         ultima_msg_lead_em: new Date().toISOString(),
       })
-      .in("id", Array.from(leadsComIncomingNova));
+      .in("id", ids);
+    // Lead de prospeccao respondeu: para a cadencia de prospeccao e
+    // muda status pra "em_conversa" (cai no fluxo inbound normal). A origem
+    // continua "prospeccao" pra historico / filtros.
+    await supabase
+      .from("leads")
+      .update({
+        proximo_contato_em: null,
+        status: "em_conversa",
+      })
+      .in("id", ids)
+      .eq("origem", "prospeccao")
+      .in("status", ["aguardando_primeiro_contato", "em_prospeccao"]);
+    // Lead em status terminal (perdido/fechou) que respondeu: re-engajou
+    // espontaneamente — volta pro fluxo inbound em conversa. Origem vira
+    // inbound de novo (mesmo se tinha sido marcado prospeccao no passado),
+    // ja que agora o cliente esta procurando a gente.
+    await supabase
+      .from("leads")
+      .update({
+        proximo_contato_em: null,
+        status: "em_conversa",
+        origem: "inbound",
+      })
+      .in("id", ids)
+      .in("status", ["perdido", "fechou"]);
   }
 
   // Pra cada lead com incoming nova: agenda resposta com debounce. Se chegar
@@ -397,6 +425,7 @@ async function tentarTratarAdiamento(
         aguardando_resposta_adiamento: false,
         proximo_contato_em: momento.toISOString(),
         numero_followup: 0,
+        numero_reativacao: 0,
       })
       .eq("id", leadId);
     const dataStr = momento.toLocaleString("pt-BR", {
@@ -437,7 +466,7 @@ async function agendarPrimeiroFollowup(
   // Isso evita follow-up "atropelar" o contato futuro programado.
   const { data: leadCheck } = await supabase
     .from("leads")
-    .select("proximo_contato_em")
+    .select("proximo_contato_em, origem")
     .eq("id", leadId)
     .single();
   if (leadCheck?.proximo_contato_em) {
@@ -445,24 +474,32 @@ async function agendarPrimeiroFollowup(
     return;
   }
 
+  // Lead de prospeccao que respondeu: usa cadencia de follow-up de prospeccao
+  // (tom diferente do inbound).
+  const ehProspeccao = leadCheck?.origem === "prospeccao";
   const { data: org } = await supabase
     .from("organizations")
-    .select("followup_config")
+    .select("followup_config, prospeccao_followup_config")
     .eq("id", organizationId)
     .single();
 
-  const config = org?.followup_config as
-    | {
-        regras?: {
-          nivel: number;
-          esperar_dias: number;
-          esperar_horas: number;
-          esperar_minutos: number;
-          ativo: boolean;
-        }[];
-      }
-    | null
-    | undefined;
+  type RegraSimples = {
+    nivel: number;
+    esperar_dias: number;
+    esperar_horas: number;
+    esperar_minutos: number;
+    ativo: boolean;
+  };
+  const configProsp = org?.prospeccao_followup_config as
+    | { regras?: RegraSimples[] }
+    | null;
+  const configInbound = org?.followup_config as
+    | { regras?: RegraSimples[] }
+    | null;
+  // Prospeccao usa sua cadencia propria; cai pro inbound se ainda nao configurada.
+  const usaProsp =
+    ehProspeccao && (configProsp?.regras?.length ?? 0) > 0;
+  const config = usaProsp ? configProsp : configInbound;
   const primeiraRegra = config?.regras?.find((r) => r.ativo && r.nivel === 1);
   if (!primeiraRegra) return;
 

@@ -38,7 +38,6 @@ export async function editarClienteAction(
   const email_contato = (formData.get("email_contato") as string)?.trim();
   const whatsapp_numero = (formData.get("whatsapp_numero") as string)?.trim();
   const plano = formData.get("plano") as string;
-  const prompt_system = (formData.get("prompt_system") as string)?.trim();
   const voice_id = (formData.get("voice_id") as string)?.trim();
   const ativo = formData.get("ativo") === "on";
 
@@ -75,7 +74,6 @@ export async function editarClienteAction(
       email_contato,
       whatsapp_numero: whatsapp_numero || null,
       plano,
-      prompt_system: prompt_system || null,
       voice_id: voice_id || null,
       voice_settings,
       caio_debounce_segundos,

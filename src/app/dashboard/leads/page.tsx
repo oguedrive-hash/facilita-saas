@@ -6,7 +6,13 @@ import { EmptyState } from "@/components/empty-state";
 import { PeriodoDropdown } from "@/components/periodo-dropdown";
 import { KanbanDrag } from "@/components/kanban-drag";
 import { SalvarViewPadrao } from "@/components/salvar-view-padrao";
-import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
+import { STATUS_CONFIG, STATUS_ORDEM, type StatusLead } from "@/lib/status-config";
+import {
+  CheckboxLeadLote,
+  CheckboxTodosLote,
+  SelecaoLoteProvider,
+  ToolbarLoteLeads,
+} from "./selecao-lote";
 
 type CaioFilter = "todos" | "on" | "off";
 type Periodo = "todos" | "hoje" | "7d" | "30d";
@@ -79,7 +85,8 @@ export default async function LeadsPage({
     .select(
       "id, nome, telefone, status, source, caio_ativo, created_at, updated_at",
       { count: "exact" },
-    );
+    )
+    .eq("origem", "inbound");
 
   if (view === "kanban") {
     // Kanban: ordenacao fixa por ultima atividade, sem paginacao (mostra todos)
@@ -117,7 +124,10 @@ export default async function LeadsPage({
   const [{ data: leads, error, count: totalLeads }, { data: contagensRaw }] =
     await Promise.all([
       query,
-      supabase.from("leads").select("status, caio_ativo"),
+      supabase
+        .from("leads")
+        .select("status, caio_ativo")
+        .eq("origem", "inbound"),
     ]);
 
   const contagens: Record<string, number> = {
@@ -196,7 +206,7 @@ export default async function LeadsPage({
       {/* Header compacto: titulo + busca + export em uma linha */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-4xl font-heading font-bold text-preto">Leads</h1>
+          <h1 className="text-4xl font-heading font-bold text-preto">Inbound</h1>
           <span className="text-sm text-cinza-medio">
             {contagens.todos} no total
           </span>
@@ -388,17 +398,15 @@ export default async function LeadsPage({
             active={statusFilter === "todos"}
             href={buildHref({ status: "todos" })}
           />
-          {(Object.keys(STATUS_CONFIG) as StatusLead[])
-            .sort((a, b) => STATUS_CONFIG[a].ordem - STATUS_CONFIG[b].ordem)
-            .map((status) => (
-              <FilterChip
-                key={status}
-                label={STATUS_CONFIG[status].label}
-                count={contagens[status] ?? 0}
-                active={statusFilter === status}
-                href={buildHref({ status })}
-              />
-            ))}
+          {STATUS_ORDEM.map((status) => (
+            <FilterChip
+              key={status}
+              label={STATUS_CONFIG[status].label}
+              count={contagens[status] ?? 0}
+              active={statusFilter === status}
+              href={buildHref({ status })}
+            />
+          ))}
         </div>
       )}
 
@@ -430,11 +438,15 @@ export default async function LeadsPage({
       ) : view === "kanban" ? (
         <KanbanDrag leads={leads} />
       ) : (
-        <>
+        <SelecaoLoteProvider>
+          <ToolbarLoteLeads />
           <div className="bg-white rounded-2xl border border-cinza-claro">
             <table className="w-full">
               <thead className="bg-offwhite border-b border-cinza-claro">
                 <tr>
+                  <th className="w-10 px-4 py-3">
+                    <CheckboxTodosLote ids={leads.map((l) => l.id)} />
+                  </th>
                   <SortableTh
                     label="Nome / Telefone"
                     field="nome"
@@ -473,6 +485,9 @@ export default async function LeadsPage({
                     key={lead.id}
                     className="border-b border-cinza-claro last:border-0 hover:bg-offwhite/50 transition"
                   >
+                    <td className="w-10 px-4 py-4">
+                      <CheckboxLeadLote leadId={lead.id} />
+                    </td>
                     <Td>
                       <div>
                         <p className="font-heading font-semibold text-preto">
@@ -509,7 +524,7 @@ export default async function LeadsPage({
                     </Td>
                     <Td className="text-right">
                       <Link
-                        href={`/dashboard/leads/${lead.id}`}
+                        href={`/dashboard/contatos/${lead.id}`}
                         className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
                       >
                         Ver →
@@ -530,7 +545,7 @@ export default async function LeadsPage({
             shownInPage={leads.length}
             buildHref={buildHref}
           />
-        </>
+        </SelecaoLoteProvider>
       )}
     </div>
   );

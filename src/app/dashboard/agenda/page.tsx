@@ -264,10 +264,10 @@ function AgendamentoCard({
           <span className="text-xs text-cinza-medio">Sem link</span>
         )}
         <Link
-          href={`/dashboard/leads/${agendamento.lead_id}`}
+          href={`/dashboard/contatos/${agendamento.lead_id}`}
           className="text-xs text-cinza-medio hover:text-laranja font-heading font-medium"
         >
-          Ver lead
+          Ver contato
         </Link>
       </div>
     </div>

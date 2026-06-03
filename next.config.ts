@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
   // (default do Next 16 é 10MB e corta o body, quebrando o parse do FormData)
   experimental: {
     proxyClientMaxBodySize: "100mb",
+    serverActions: {
+      // JSON com config de follow-up pode ficar grande (URLs de attachment, msgs)
+      bodySizeLimit: "10mb",
+    },
   },
   // Marca pacotes binários (ffmpeg-static) como externos pra Next nao tentar
   // bundlar — eles tem que ser resolvidos em runtime

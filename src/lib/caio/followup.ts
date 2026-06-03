@@ -37,17 +37,59 @@ type Regra = {
   attachment_mime?: string | null;
 };
 
-type Reativacao = {
-  ativa: boolean;
+type ReativacaoRegra = {
+  nivel: number;
   esperar_dias: number;
+  esperar_horas: number;
+  esperar_minutos: number;
   mensagem: string;
   usa_ia: boolean;
+  ativo: boolean;
+  tipo_midia?: "texto" | "audio" | "imagem" | "video";
+  attachment_url?: string | null;
+  attachment_mime?: string | null;
+};
+
+type Reativacao = {
+  ativa: boolean;
+  regras: ReativacaoRegra[];
 };
 
 type FollowupConfig = {
   regras: Regra[];
   reativacao: Reativacao;
 };
+
+/**
+ * Aceita shape antigo (campos planos) ou novo (regras[]) e devolve o novo.
+ */
+function normalizarReativacaoRaw(raw: unknown): Reativacao {
+  if (!raw || typeof raw !== "object") return { ativa: false, regras: [] };
+  const obj = raw as Record<string, unknown>;
+  if (Array.isArray(obj.regras)) {
+    return { ativa: !!obj.ativa, regras: obj.regras as ReativacaoRegra[] };
+  }
+  if (typeof obj.mensagem === "string" || typeof obj.esperar_dias === "number") {
+    return {
+      ativa: !!obj.ativa,
+      regras: [
+        {
+          nivel: 1,
+          esperar_dias: Number(obj.esperar_dias ?? 30),
+          esperar_horas: 0,
+          esperar_minutos: 0,
+          mensagem: String(obj.mensagem ?? ""),
+          usa_ia: !!obj.usa_ia,
+          ativo: true,
+          tipo_midia: (obj.tipo_midia as ReativacaoRegra["tipo_midia"]) ?? "texto",
+          attachment_url: (obj.attachment_url as string | null) ?? null,
+          attachment_mime: (obj.attachment_mime as string | null) ?? null,
+        },
+      ],
+    };
+  }
+  return { ativa: !!obj.ativa, regras: [] };
+}
 
 type LeadProcess = {
   id: string;
@@ -56,10 +98,12 @@ type LeadProcess = {
   status: string;
   organization_id: string;
   numero_followup: number | null;
+  numero_reativacao: number | null;
   chatwoot_conversation_id: number | null;
   caio_ativo: boolean | null;
   followup_ativo: boolean | null;
   ultimo_followup_em: string | null;
+  origem: string | null;
 };
 
 /**
@@ -103,18 +147,57 @@ export async function processarFollowupLead(
     return { ok: true, acao: "desistencia" };
   }
 
-  // Le config da org
+  // Le config da org. Lead de prospeccao que ja respondeu (e agora sumiu)
+  // usa prospeccao_followup_config — tom diferente do followup inbound.
   const { data: org } = await supabase
     .from("organizations")
-    .select("followup_config, followup_mudar_status_a_partir")
+    .select(
+      "followup_config, followup_mudar_status_a_partir, prospeccao_followup_config",
+    )
     .eq("id", lead.organization_id)
     .single();
 
-  const config = (org?.followup_config ?? null) as FollowupConfig | null;
+  const ehProspeccao = lead.origem === "prospeccao";
+  const prospFollowup = org?.prospeccao_followup_config as
+    | { regras?: Regra[] }
+    | null;
+  // Lead de prospeccao SEMPRE usa prospeccao_followup_config (sem fallback
+  // pro inbound, pra evitar misturar tons). Se nao houver regras de prospeccao,
+  // marca perdido e sai — nao tem mais cadencia pra rodar.
+  if (ehProspeccao) {
+    if ((prospFollowup?.regras?.length ?? 0) === 0) {
+      await supabase
+        .from("leads")
+        .update({
+          status: "perdido",
+          proximo_followup_em: null,
+          proximo_contato_em: null,
+        })
+        .eq("id", lead.id);
+      return { ok: true, acao: "desistencia" };
+    }
+  }
+  const configRaw = ehProspeccao
+    ? ({
+        regras: prospFollowup?.regras ?? [],
+        reativacao: null,
+      } as { regras?: Regra[]; reativacao?: unknown })
+    : ((org?.followup_config ?? null) as
+        | { regras?: Regra[]; reativacao?: unknown }
+        | null);
   const mudarStatusAPartir =
     (org?.followup_mudar_status_a_partir as number | null) ?? 1;
-  if (!config?.regras) {
+  if (!configRaw?.regras) {
     return { error: "org sem followup_config" };
+  }
+  const config: FollowupConfig = {
+    regras: configRaw.regras,
+    reativacao: normalizarReativacaoRaw(configRaw.reativacao),
+  };
+
+  // Lead ja iniciou reativacao? Vai direto pro fluxo de reativacao
+  if ((lead.numero_reativacao ?? 0) > 0) {
+    return await processarFimRegras(lead, config);
   }
 
   const regrasAtivas = config.regras.filter((r) => r.ativo);
@@ -262,13 +345,17 @@ export async function processarFollowupLead(
 
   // Se essa foi a ultima regra ativa, encerra ciclo (desistencia ou reativacao)
   if (!proximaRegra) {
-    if (config.reativacao?.ativa) {
-      const reativacaoEm = new Date();
-      reativacaoEm.setDate(
-        reativacaoEm.getDate() + (config.reativacao.esperar_dias ?? 30),
-      );
-      update.proximo_followup_em = reativacaoEm.toISOString();
-      // Mantem status — ainda nao "perdeu" ate a reativacao falhar
+    const regrasReatAtivas = config.reativacao.regras.filter((r) => r.ativo);
+    const primeiraReat = regrasReatAtivas[0];
+    if (config.reativacao.ativa && primeiraReat) {
+      // Agenda a primeira regra de reativacao — quando o tempo passar,
+      // processarFimRegras envia. numero_reativacao continua 0 ate o disparo.
+      update.proximo_followup_em = calcularProximoEm(
+        primeiraReat.esperar_dias,
+        primeiraReat.esperar_horas,
+        primeiraReat.esperar_minutos,
+      ).toISOString();
+      // Mantem status — ainda nao "perdeu" ate as reativacoes falharem
     } else {
       update.status = "perdido";
       update.proximo_followup_em = null;
@@ -290,9 +377,12 @@ export async function processarFollowupLead(
 }
 
 /**
- * Chamado quando esgotaram as regras do followup principal.
- * Se reativacao tiver ativa, executa a reativacao agora.
- * Senao, marca como perdido.
+ * Chamado quando o followup principal esgotou e o lead esta em fase de
+ * reativacao. Itera nas regras de reativacao usando lead.numero_reativacao.
+ *
+ * - numero_reativacao = 0 → vai disparar a primeira regra agora
+ * - cada disparo incrementa numero_reativacao
+ * - quando acaba a lista, marca como "perdido"
  */
 async function processarFimRegras(
   lead: LeadProcess,
@@ -309,40 +399,71 @@ async function processarFimRegras(
     return { ok: true, acao: "desistencia" };
   }
 
-  // Envia reativacao
+  const regrasReatAtivas = reat.regras.filter((r) => r.ativo);
+  const proximoNivelReat = (lead.numero_reativacao ?? 0) + 1;
+  const regra = regrasReatAtivas.find((r) => r.nivel === proximoNivelReat);
+
+  if (!regra) {
+    // Sem proxima regra de reativacao → desistiu de vez
+    await supabase
+      .from("leads")
+      .update({ status: "perdido", proximo_followup_em: null })
+      .eq("id", lead.id);
+    return { ok: true, acao: "desistencia" };
+  }
+
+  // Envia mensagem (IA ou template)
   let texto: string;
-  if (reat.usa_ia) {
+  if (regra.usa_ia) {
     const result = await gerarRespostaCaio({ leadId: lead.id });
     if ("error" in result) {
-      texto = aplicarTemplate(reat.mensagem, lead);
+      texto = aplicarTemplate(regra.mensagem, lead);
     } else {
       texto = result.resposta;
     }
   } else {
-    texto = aplicarTemplate(reat.mensagem, lead);
+    texto = aplicarTemplate(regra.mensagem, lead);
   }
 
-  await enviarMensagem({
+  // Importacao lazy do helper de midia pra evitar import circular
+  const { enviarComMidia } = await import("./enviar-com-midia");
+  await enviarComMidia({
     conversationId: lead.chatwoot_conversation_id,
-    content: texto,
+    organizationId: lead.organization_id,
+    texto,
+    tipoMidia: regra.tipo_midia ?? "texto",
+    attachmentUrl: regra.attachment_url ?? null,
+    attachmentMime: regra.attachment_mime ?? null,
   });
 
-  // Apos reativacao, marca como perdido e nao tenta de novo
-  await supabase
-    .from("leads")
-    .update({
-      ultimo_followup_em: new Date().toISOString(),
-      proximo_followup_em: null,
-      status: "perdido",
-    })
-    .eq("id", lead.id);
+  // Agenda proxima regra de reativacao, ou marca perdido se foi a ultima
+  const proximaRegra = regrasReatAtivas.find(
+    (r) => r.nivel === proximoNivelReat + 1,
+  );
+  const update: Record<string, unknown> = {
+    numero_reativacao: proximoNivelReat,
+    ultimo_followup_em: new Date().toISOString(),
+  };
+  if (proximaRegra) {
+    update.proximo_followup_em = calcularProximoEm(
+      proximaRegra.esperar_dias,
+      proximaRegra.esperar_horas,
+      proximaRegra.esperar_minutos,
+    ).toISOString();
+  } else {
+    update.proximo_followup_em = null;
+    update.status = "perdido";
+  }
+
+  await supabase.from("leads").update(update).eq("id", lead.id);
 
   await logarEvento({
     leadId: lead.id,
     organizationId: lead.organization_id,
     tipo: "reativacao_enviada",
-    descricao: "Mensagem de reativação enviada — lead marcado como perdido",
+    descricao: `Reativação nº${proximoNivelReat} enviada${proximaRegra ? "" : " — lead marcado como perdido"}`,
     autorNome: "Caio (automático)",
+    meta: { nivel: proximoNivelReat, usa_ia: regra.usa_ia },
   });
 
   return { ok: true, acao: "reativacao" };
@@ -362,7 +483,7 @@ export async function processarFollowupsPendentes(): Promise<{
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, organization_id, numero_followup, chatwoot_conversation_id, caio_ativo, followup_ativo, ultimo_followup_em",
+      "id, nome, telefone, status, organization_id, numero_followup, numero_reativacao, chatwoot_conversation_id, caio_ativo, followup_ativo, ultimo_followup_em, origem",
     )
     .eq("caio_ativo", true)
     .eq("followup_ativo", true)
