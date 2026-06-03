@@ -206,7 +206,7 @@ export function TabelaComSelecao({ leads }: { leads: Lead[] }) {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-cinza-claro overflow-hidden">
+      <div className="bg-white rounded-2xl border border-cinza-claro">
         <table className="w-full">
           <thead className="bg-offwhite border-b border-cinza-claro">
             <tr>
