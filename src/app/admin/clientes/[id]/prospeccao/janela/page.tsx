@@ -4,10 +4,7 @@ import { JanelaForm } from "./form";
 import type { ProspeccaoJanela } from "../actions";
 
 const DEFAULT: ProspeccaoJanela = {
-  dias_semana: [1, 2, 3, 4, 5],
-  hora_inicio: 9,
-  hora_fim: 18,
-  rate_limit_hora: 10,
+  intervalo_minutos: 2,
 };
 
 export default async function JanelaProspeccaoPage({
@@ -26,7 +23,15 @@ export default async function JanelaProspeccaoPage({
 
   if (error || !cliente) notFound();
 
-  const janela = (cliente.prospeccao_janela as ProspeccaoJanela | null) ?? DEFAULT;
+  // Aceita shape novo OU antigo (com dias_semana/hora_inicio/etc) e normaliza
+  // pro novo formato — campos antigos sao ignorados.
+  const raw = cliente.prospeccao_janela as Record<string, unknown> | null;
+  const janela: ProspeccaoJanela = {
+    intervalo_minutos:
+      typeof raw?.intervalo_minutos === "number" && raw.intervalo_minutos > 0
+        ? raw.intervalo_minutos
+        : DEFAULT.intervalo_minutos,
+  };
 
   return <JanelaForm organizationId={cliente.id} janelaInicial={janela} />;
 }

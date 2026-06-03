@@ -4,14 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  getJanela,
-  proximoSlot,
-} from "@/lib/caio/janela-prospeccao";
-import {
   digitosTelefone,
   normalizarTelefoneBr,
 } from "@/lib/caio/telefone";
-import type { ProspeccaoConfig } from "../actions";
 
 export type LeadImport = {
   nome: string;
@@ -65,17 +60,6 @@ export async function importarLeadsProspeccao(
 
   const admin = createAdminClient();
 
-  // Le cadencia + janela atual
-  const { data: org } = await admin
-    .from("organizations")
-    .select("prospeccao_config, prospeccao_janela")
-    .eq("id", organizationId)
-    .single();
-  const config = org?.prospeccao_config as ProspeccaoConfig | null;
-  const janela = getJanela(org?.prospeccao_janela);
-  const regrasAtivas = (config?.regras ?? []).filter((r) => r.ativo);
-  const primeiraRegra = regrasAtivas.find((r) => r.nivel === 1);
-
   // Pega leads existentes da org com status pra decidir cada caso:
   //  - terminal (perdido/fechou) → reativa pra prospeccao
   //  - ativo (qualquer outro) → pula com warning
@@ -113,22 +97,11 @@ export async function importarLeadsProspeccao(
     proximo_contato_em: string | null;
   };
   const aInserir: NovoLead[] = [];
-  const aReativar: { id: string; proximoContatoEm: string | null }[] = [];
+  const aReativar: { id: string }[] = [];
   // Set local pra evitar duplicidade entre linhas do mesmo CSV
   const telefonesDoLote = new Set<string>();
-
-  function calcularProximoContatoEm(): string | null {
-    if (!primeiraRegra) return null;
-    const desejado = new Date();
-    desejado.setDate(desejado.getDate() + primeiraRegra.esperar_dias);
-    desejado.setHours(
-      desejado.getHours() + primeiraRegra.esperar_horas,
-      desejado.getMinutes() + primeiraRegra.esperar_minutos,
-      0,
-      0,
-    );
-    return proximoSlot(desejado, janela).toISOString();
-  }
+  // Importacao deixa proximo_contato_em=null. O lead so dispara quando o
+  // operador clicar "Disparar agora" — assim respeita o intervalo configurado.
 
   for (let i = 0; i < leads.length; i++) {
     const l = leads[i];
@@ -162,10 +135,7 @@ export async function importarLeadsProspeccao(
     if (existente) {
       if (STATUS_TERMINAIS.has(existente.status)) {
         // Reativa pra prospeccao
-        aReativar.push({
-          id: existente.id,
-          proximoContatoEm: calcularProximoContatoEm(),
-        });
+        aReativar.push({ id: existente.id });
         continue;
       }
       // Lead ativo em outro fluxo — pula com warning
@@ -187,7 +157,7 @@ export async function importarLeadsProspeccao(
       caio_ativo: true,
       followup_ativo: true,
       dados_extras: l.dados_extras ?? {},
-      proximo_contato_em: calcularProximoContatoEm(),
+      proximo_contato_em: null,
     });
   }
 
@@ -213,7 +183,7 @@ export async function importarLeadsProspeccao(
         numero_reativacao: 0,
         numero_prospeccao: 0,
         proximo_followup_em: null,
-        proximo_contato_em: r.proximoContatoEm,
+        proximo_contato_em: null,
       })
       .eq("id", r.id);
     if (upErr) {

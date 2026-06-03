@@ -29,17 +29,15 @@ export type ProspeccaoFollowupConfig = {
 };
 
 export type ProspeccaoJanela = {
-  dias_semana: number[]; // 0=domingo ... 6=sabado
-  hora_inicio: number; // 0-23
-  hora_fim: number; // 0-23
-  rate_limit_hora: number; // msgs por hora por org
+  // Minutos de intervalo entre disparos da PRIMEIRA mensagem em lote.
+  // Quando voce seleciona N contatos e clica "Disparar agora", os N leads
+  // sao agendados com `intervalo_minutos` de espaco entre cada um —
+  // evita o WhatsApp marcar como spam por enviar em rajada.
+  intervalo_minutos: number;
 };
 
 const JANELA_DEFAULT: ProspeccaoJanela = {
-  dias_semana: [1, 2, 3, 4, 5],
-  hora_inicio: 9,
-  hora_fim: 18,
-  rate_limit_hora: 10,
+  intervalo_minutos: 2,
 };
 
 /**
@@ -125,25 +123,11 @@ export async function salvarProspeccaoConfig(
   const regrasLimpas = sanitizarRegras(regrasInput);
   const followupLimpo = sanitizarRegras(followupInput);
 
-  // Sanitiza janela
-  const diasSemanaLimpos = Array.from(
-    new Set(
-      (janelaInput.dias_semana ?? [])
-        .map((d) => Math.round(clamp(d, 0, 6)))
-        .filter((d) => Number.isInteger(d)),
-    ),
-  ).sort();
-  const horaInicio = Math.round(clamp(janelaInput.hora_inicio ?? 9, 0, 23));
-  let horaFim = Math.round(clamp(janelaInput.hora_fim ?? 18, 0, 23));
-  if (horaFim <= horaInicio) horaFim = horaInicio + 1;
-  const rateLimitHora = Math.round(
-    clamp(janelaInput.rate_limit_hora ?? 10, 1, 100),
-  );
+  // Sanitiza janela — agora so tem intervalo_minutos entre disparos.
   const janelaLimpa: ProspeccaoJanela = {
-    dias_semana: diasSemanaLimpos.length > 0 ? diasSemanaLimpos : [1, 2, 3, 4, 5],
-    hora_inicio: horaInicio,
-    hora_fim: horaFim,
-    rate_limit_hora: rateLimitHora,
+    intervalo_minutos: Math.round(
+      clamp(janelaInput.intervalo_minutos ?? 2, 1, 120),
+    ),
   };
 
   const { error } = await supabase

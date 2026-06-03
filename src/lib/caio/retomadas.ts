@@ -21,7 +21,6 @@ import {
   enviarComMidia,
   type TipoMidia,
 } from "@/lib/caio/enviar-com-midia";
-import { getJanela, proximoSlot } from "@/lib/caio/janela-prospeccao";
 
 type RegraSimples = {
   nivel: number;
@@ -121,7 +120,6 @@ export async function processarRetomadasPendentes(): Promise<{
       const cadenciaProsp = org?.prospeccao_config as
         | { regras?: RegraSimples[] }
         | null;
-      const janela = getJanela(org?.prospeccao_janela);
       const proxNivel = (lead.numero_prospeccao ?? 0) + 1;
       const proxRegra = (cadenciaProsp?.regras ?? []).find(
         (r) => r.ativo && r.nivel === proxNivel,
@@ -137,7 +135,7 @@ export async function processarRetomadasPendentes(): Promise<{
           0,
           0,
         );
-        proximoContatoEm = proximoSlot(desejado, janela).toISOString();
+        proximoContatoEm = desejado.toISOString();
       }
       // Se ainda nao tinha disparado nenhuma msg de prospeccao, mantem em
       // aguardando_primeiro_contato.

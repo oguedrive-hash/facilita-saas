@@ -4,10 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  getJanela,
-  proximoSlot,
-} from "@/lib/caio/janela-prospeccao";
-import {
   digitosTelefone,
   normalizarTelefoneBr,
 } from "@/lib/caio/telefone";
@@ -35,7 +31,8 @@ const STATUS_TERMINAIS = new Set(["perdido", "fechou"]);
  *  - "inbound"   → leads ficam com origem=inbound, status=novo_lead, sem
  *                  cadência ativa (esperam o cliente mandar msg)
  *  - "prospeccao"→ leads ficam com origem=prospeccao, status=aguardando_primeiro_contato,
- *                  primeira regra da cadência agendada respeitando janela
+ *                  SEM proximo_contato_em (operador dispara manualmente via
+ *                  "Disparar agora" pra entrar na fila com intervalo)
  *
  * Duplicatas (telefone normalizado) sao tratadas igual em ambos os modos:
  *  - lead existente em status terminal (perdido/fechou) → reativa pra origem escolhida
@@ -63,41 +60,8 @@ export async function importarContatosLote(
 
   const admin = createAdminClient();
 
-  // Janela + primeira regra de prospecção (só usadas se como === "prospeccao")
-  type Regra = {
-    nivel: number;
-    esperar_dias: number;
-    esperar_horas: number;
-    esperar_minutos: number;
-    ativo: boolean;
-  };
-  let primeiraRegra: Regra | undefined;
-  let janela: ReturnType<typeof getJanela> | undefined;
-  if (como === "prospeccao") {
-    const { data: org } = await admin
-      .from("organizations")
-      .select("prospeccao_config, prospeccao_janela")
-      .eq("id", organizationId)
-      .single();
-    const config = org?.prospeccao_config as { regras?: Regra[] } | null;
-    janela = getJanela(org?.prospeccao_janela);
-    primeiraRegra = (config?.regras ?? []).find(
-      (r) => r.ativo && r.nivel === 1,
-    );
-  }
-
-  function calcularProximoContatoEm(): string | null {
-    if (como !== "prospeccao" || !primeiraRegra || !janela) return null;
-    const desejado = new Date();
-    desejado.setDate(desejado.getDate() + primeiraRegra.esperar_dias);
-    desejado.setHours(
-      desejado.getHours() + primeiraRegra.esperar_horas,
-      desejado.getMinutes() + primeiraRegra.esperar_minutos,
-      0,
-      0,
-    );
-    return proximoSlot(desejado, janela).toISOString();
-  }
+  // Importacao deixa proximo_contato_em=null. Pra prospeccao, o lead so
+  // entra na fila quando o operador clicar "Disparar agora".
 
   // Pega leads existentes da org pra dedup
   const { data: existentes } = await admin
@@ -189,7 +153,7 @@ export async function importarContatosLote(
       caio_ativo: true,
       followup_ativo: true,
       dados_extras: l.dados_extras ?? {},
-      proximo_contato_em: calcularProximoContatoEm(),
+      proximo_contato_em: null,
     });
   }
 
@@ -215,7 +179,7 @@ export async function importarContatosLote(
         numero_reativacao: 0,
         numero_prospeccao: 0,
         proximo_followup_em: null,
-        proximo_contato_em: calcularProximoContatoEm(),
+        proximo_contato_em: null,
       })
       .eq("id", r.id);
     if (upErr) {

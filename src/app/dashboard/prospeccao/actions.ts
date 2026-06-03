@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processarProspeccaoLead } from "@/lib/caio/prospeccao";
+import { getJanela } from "@/lib/caio/janela-prospeccao";
 import { digitosTelefone } from "@/lib/caio/telefone";
 
 export type RelatorioDisparo = {
@@ -13,14 +14,17 @@ export type RelatorioDisparo = {
 };
 
 /**
- * Dispara a primeira mensagem da cadência pros leads selecionados, mas
- * RESPEITANDO janela horária + rate limit (protecao anti-ban WhatsApp).
+ * Dispara a primeira mensagem da cadência pros leads selecionados,
+ * espacando os disparos com o `intervalo_minutos` configurado.
  *
- * Pensado pro botão "Disparar agora" em /dashboard/prospeccao. Se você
- * tiver 20 leads selecionados e o rate limit for 10/h, os 10 primeiros
- * disparam imediatamente e os 10 restantes ficam agendados pra +1h.
- * Se estiver fora da janela (ex: 22h, janela é 9-18h), todos são
- * agendados pra próxima janela.
+ * Pensado pro botão "Disparar agora" em /dashboard/prospeccao. O 1º lead
+ * dispara imediatamente; os seguintes ficam agendados no `proximo_contato_em`
+ * com `intervalo_minutos` entre cada um — o cron de prospecção pega e
+ * dispara cada um quando chega a hora. Isso evita rajada de msgs que o
+ * WhatsApp marcaria como spam.
+ *
+ * Por org: usa um intervalo separado por organização. Se o lote tem leads
+ * de orgs diferentes (uso multi-tenant), cada org tem sua propria fila.
  */
 export async function dispararPrimeirasMensagensEmLote(
   leadIds: string[],
@@ -35,8 +39,6 @@ export async function dispararPrimeirasMensagensEmLote(
     return { ok: true, relatorio: { enviados: 0, agendados: 0, falhas: [] } };
   }
 
-  // Le os leads usando RLS — se o user nao tem acesso a algum, ele simplesmente
-  // nao volta na query.
   const { data: leadsVisiveis, error } = await supabase
     .from("leads")
     .select(
@@ -51,12 +53,9 @@ export async function dispararPrimeirasMensagensEmLote(
   }
 
   const relatorio: RelatorioDisparo = { enviados: 0, agendados: 0, falhas: [] };
-  const orgsAfetadas = new Set<string>();
 
-  // Antes de disparar, checa se algum dos selecionados tem telefone que ja
-  // existe em OUTRO lead da mesma org. Se sim, o Chatwoot vai roteor a msg
-  // pra conversa do outro lead (mesmo contato/inbox) — bug grave que
-  // queremos evitar antes que aconteca.
+  // Detecta conflito de telefone duplicado em outro lead da mesma org
+  // (Chatwoot rotearia msg pra conversa errada).
   const admin = createAdminClient();
   const orgIds = Array.from(
     new Set(leadsVisiveis.map((l) => l.organization_id)),
@@ -90,7 +89,24 @@ export async function dispararPrimeirasMensagensEmLote(
     }
   }
 
-  // Processa sequencial pra evitar disputar rate de envio.
+  // Le intervalo configurado por org (cache local)
+  const intervaloPorOrg = new Map<string, number>();
+  for (const orgId of orgIds) {
+    const { data: org } = await admin
+      .from("organizations")
+      .select("prospeccao_janela")
+      .eq("id", orgId)
+      .single();
+    const janela = getJanela(org?.prospeccao_janela);
+    intervaloPorOrg.set(orgId, janela.intervalo_minutos);
+  }
+
+  // Conta agendamentos por org (pra calcular o offset de cada lead na fila)
+  const agendadosPorOrg = new Map<string, number>();
+
+  const agora = Date.now();
+  let disparouPrimeiroDaOrg = new Set<string>();
+
   for (const lead of leadsVisiveis) {
     const conflito = conflitosPorLead.get(lead.id);
     if (conflito) {
@@ -101,43 +117,68 @@ export async function dispararPrimeirasMensagensEmLote(
       });
       continue;
     }
-    try {
-      const result = await processarProspeccaoLead({
-        id: lead.id,
-        nome: lead.nome,
-        telefone: lead.telefone,
-        status: lead.status,
-        organization_id: lead.organization_id,
-        numero_prospeccao: lead.numero_prospeccao,
-        dados_extras: lead.dados_extras as Record<string, string> | null,
-        chatwoot_conversation_id: lead.chatwoot_conversation_id,
-        caio_ativo: lead.caio_ativo,
-      });
-      if ("error" in result) {
-        relatorio.falhas.push({
-          leadId: lead.id,
+
+    const orgId = lead.organization_id;
+    const intervalo = intervaloPorOrg.get(orgId) ?? 2;
+
+    // 1º lead de cada org → dispara imediato.
+    // Demais leads da mesma org → agenda com offset.
+    if (!disparouPrimeiroDaOrg.has(orgId)) {
+      disparouPrimeiroDaOrg.add(orgId);
+      try {
+        const result = await processarProspeccaoLead({
+          id: lead.id,
           nome: lead.nome,
-          motivo: result.error,
+          telefone: lead.telefone,
+          status: lead.status,
+          organization_id: lead.organization_id,
+          numero_prospeccao: lead.numero_prospeccao,
+          dados_extras: lead.dados_extras as Record<string, string> | null,
+          chatwoot_conversation_id: lead.chatwoot_conversation_id,
+          caio_ativo: lead.caio_ativo,
         });
-      } else if (result.acao === "enviou") {
-        relatorio.enviados++;
-        orgsAfetadas.add(lead.organization_id);
-      } else if (result.acao === "reagendou") {
-        relatorio.agendados++;
-      } else {
+        if ("error" in result) {
+          relatorio.falhas.push({
+            leadId: lead.id,
+            nome: lead.nome,
+            motivo: result.error,
+          });
+        } else if (result.acao === "enviou") {
+          relatorio.enviados++;
+        } else {
+          relatorio.falhas.push({
+            leadId: lead.id,
+            nome: lead.nome,
+            motivo: `worker devolveu '${result.acao}' (esperado 'enviou')`,
+          });
+        }
+      } catch (err) {
         relatorio.falhas.push({
           leadId: lead.id,
           nome: lead.nome,
-          motivo: `worker devolveu '${result.acao}' (esperado 'enviou' ou 'reagendou')`,
+          motivo: err instanceof Error ? err.message : String(err),
         });
       }
-    } catch (err) {
+      continue;
+    }
+
+    // Já tem 1+ desta org agendado/enviado — esse vai na fila
+    const offsetIdx = (agendadosPorOrg.get(orgId) ?? 0) + 1;
+    agendadosPorOrg.set(orgId, offsetIdx);
+    const proximo = new Date(agora + offsetIdx * intervalo * 60 * 1000);
+    const { error: upErr } = await admin
+      .from("leads")
+      .update({ proximo_contato_em: proximo.toISOString() })
+      .eq("id", lead.id);
+    if (upErr) {
       relatorio.falhas.push({
         leadId: lead.id,
         nome: lead.nome,
-        motivo: err instanceof Error ? err.message : String(err),
+        motivo: `erro ao agendar: ${upErr.message}`,
       });
+      continue;
     }
+    relatorio.agendados++;
   }
 
   revalidatePath("/dashboard/prospeccao");

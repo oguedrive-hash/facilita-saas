@@ -4,21 +4,18 @@
  *
  * Diferente do worker de follow-up (inbound):
  *  - leads tem origem='prospeccao' e numero_prospeccao indicando a regra
- *  - respeita janela horaria + dias da semana configurados na org
- *  - respeita rate limit por hora por org (conta msgs enviadas)
  *  - mensagens sao SEMPRE template fixo (sem IA na primeira fase)
  *  - quando lead responde, webhook ja desliga prospeccao automaticamente
+ *
+ * O intervalo entre disparos da 1a msg em lote e gerenciado pelo action
+ * `dispararPrimeirasMensagensEmLote` (que espacja os agendamentos). O
+ * worker em si so processa o `proximo_contato_em` vencido — sem janela
+ * horaria ou rate limit.
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logarEvento } from "@/lib/caio/eventos";
 import { enviarComMidia } from "@/lib/caio/enviar-com-midia";
-import {
-  dentroDaJanela,
-  getJanela,
-  proximoSlot,
-  type Janela,
-} from "@/lib/caio/janela-prospeccao";
 
 type RegraProspeccao = {
   nivel: number;
@@ -100,24 +97,6 @@ async function garantirConversaChatwoot(
   return { ok: result.conversationId };
 }
 
-/**
- * Conta mensagens de prospeccao enviadas pela org na ultima hora.
- * Usa lead_eventos pra contagem.
- */
-async function contarEnviosUltimaHora(
-  organizationId: string,
-): Promise<number> {
-  const admin = createAdminClient();
-  const umaHoraAtras = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await admin
-    .from("lead_eventos")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", organizationId)
-    .eq("tipo", "prospeccao_enviada")
-    .gte("created_at", umaHoraAtras);
-  return count ?? 0;
-}
-
 export async function processarProspeccaoLead(
   lead: LeadProspeccao,
 ): Promise<{ ok: true; acao: "enviou" | "reagendou" | "esgotou" } | { error: string }> {
@@ -134,12 +113,11 @@ export async function processarProspeccaoLead(
   // Le config da org
   const { data: org } = await supabase
     .from("organizations")
-    .select("prospeccao_config, prospeccao_janela")
+    .select("prospeccao_config")
     .eq("id", lead.organization_id)
     .single();
 
   const config = (org?.prospeccao_config as { regras?: RegraProspeccao[] } | null);
-  const janela = getJanela(org?.prospeccao_janela);
 
   const regrasAtivas = (config?.regras ?? []).filter((r) => r.ativo);
   // Regra defensive: lead em "aguardando_primeiro_contato" SEMPRE dispara
@@ -159,35 +137,6 @@ export async function processarProspeccaoLead(
       .update({ status: "perdido", proximo_contato_em: null })
       .eq("id", lead.id);
     return { ok: true, acao: "esgotou" };
-  }
-
-  // Janela horaria + rate limit SO valem na PRIMEIRA mensagem (proximoNivel=1).
-  // Sao mecanismos de protecao contra ban do WhatsApp em abordagem fria.
-  // A partir da regra 2, ja existe conversa em andamento — manda no delay
-  // exato configurado.
-  if (proximoNivel === 1) {
-    const agora = new Date();
-    if (!dentroDaJanela(agora, janela)) {
-      const proxSlot = proximoSlot(agora, janela);
-      await supabase
-        .from("leads")
-        .update({ proximo_contato_em: proxSlot.toISOString() })
-        .eq("id", lead.id);
-      return { ok: true, acao: "reagendou" };
-    }
-
-    const enviadasUltimaHora = await contarEnviosUltimaHora(
-      lead.organization_id,
-    );
-    if (enviadasUltimaHora >= janela.rate_limit_hora) {
-      const desejado = new Date(agora.getTime() + 60 * 60 * 1000);
-      const proxSlot = proximoSlot(desejado, janela);
-      await supabase
-        .from("leads")
-        .update({ proximo_contato_em: proxSlot.toISOString() })
-        .eq("id", lead.id);
-      return { ok: true, acao: "reagendou" };
-    }
   }
 
   // Garante que tem conversa no Chatwoot
@@ -321,7 +270,3 @@ export async function processarProspeccoesPendentes(): Promise<{
   return { total: leads.length, ok: okCount, erros: erroCount };
 }
 
-/**
- * Re-export pra usar nos atualizadores que precisam de Janela tipada.
- */
-export type { Janela };

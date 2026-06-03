@@ -3,16 +3,6 @@
 import { useState, useTransition } from "react";
 import { salvarProspeccaoConfig, type ProspeccaoJanela } from "../actions";
 
-const DIAS = [
-  { num: 1, label: "Seg" },
-  { num: 2, label: "Ter" },
-  { num: 3, label: "Qua" },
-  { num: 4, label: "Qui" },
-  { num: 5, label: "Sex" },
-  { num: 6, label: "Sáb" },
-  { num: 0, label: "Dom" },
-] as const;
-
 export function JanelaForm({
   organizationId,
   janelaInicial,
@@ -24,15 +14,6 @@ export function JanelaForm({
   const [pending, startTransition] = useTransition();
   const [salvouAgora, setSalvouAgora] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-
-  function toggleDia(dia: number) {
-    setJanela((j) => {
-      const dias = j.dias_semana.includes(dia)
-        ? j.dias_semana.filter((d) => d !== dia)
-        : [...j.dias_semana, dia].sort();
-      return { ...j, dias_semana: dias };
-    });
-  }
 
   function salvar() {
     setErro(null);
@@ -52,109 +33,57 @@ export function JanelaForm({
       <section>
         <div className="mb-4">
           <h3 className="text-base font-heading font-bold text-preto">
-            Janela de envio
+            Intervalo entre disparos
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
-            Quando o Caio pode disparar mensagens de prospecção. Fora desses
-            horários/dias, mensagens ficam em fila e disparam na próxima janela.
+            Quando você seleciona vários contatos e clica &quot;Disparar
+            agora&quot;, o sistema espaça os envios da primeira mensagem desse
+            tempo entre cada lead — evita o WhatsApp marcar como spam.
           </p>
         </div>
 
-        <div className="space-y-5 p-4 rounded-lg bg-offwhite border border-cinza-claro">
-          <div>
-            <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
-              Dias da semana
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {DIAS.map((d) => {
-                const ativo = janela.dias_semana.includes(d.num);
-                return (
-                  <button
-                    key={d.num}
-                    type="button"
-                    onClick={() => toggleDia(d.num)}
-                    className={`px-3 py-2 rounded-lg text-xs font-heading font-semibold transition ${
-                      ativo
-                        ? "bg-preto text-white"
-                        : "bg-white border border-cinza-claro text-cinza-medio hover:border-laranja hover:text-preto"
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="p-4 rounded-lg bg-offwhite border border-cinza-claro">
+          <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
+            Intervalo entre cada contato (minutos)
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={janela.intervalo_minutos}
+              onChange={(e) =>
+                setJanela({
+                  ...janela,
+                  intervalo_minutos: parseInt(e.target.value, 10) || 1,
+                })
+              }
+              className="w-24 px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
+            />
+            <span className="text-sm text-cinza-medio">min</span>
           </div>
+          <p className="text-[10px] text-cinza-medio mt-2">
+            Conservador: 2 a 5 min. Volumes maiores ou intervalos menores
+            aumentam risco de ban do WhatsApp.
+          </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-                Hora início
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={janela.hora_inicio}
-                  onChange={(e) =>
-                    setJanela({
-                      ...janela,
-                      hora_inicio: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-                />
-                <span className="text-sm text-cinza-medio">h</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-                Hora fim
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={janela.hora_fim}
-                  onChange={(e) =>
-                    setJanela({
-                      ...janela,
-                      hora_fim: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-                />
-                <span className="text-sm text-cinza-medio">h</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-              Limite de envios por hora
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={janela.rate_limit_hora}
-                onChange={(e) =>
-                  setJanela({
-                    ...janela,
-                    rate_limit_hora: parseInt(e.target.value, 10) || 1,
-                  })
-                }
-                className="w-24 px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-              />
-              <span className="text-sm text-cinza-medio">msgs/h</span>
-            </div>
-            <p className="text-[10px] text-cinza-medio mt-1">
-              Conservador: 10/h. Volumes maiores aumentam risco de ban do
-              WhatsApp.
+          <div className="mt-4 p-3 rounded-md bg-white border border-cinza-claro">
+            <p className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
+              Exemplo
             </p>
+            <p className="text-xs text-preto">
+              10 contatos selecionados, intervalo de {janela.intervalo_minutos}{" "}
+              min:
+            </p>
+            <ul className="text-[11px] text-cinza-medio mt-1 space-y-0.5">
+              <li>• Contato 1 → dispara imediato</li>
+              <li>• Contato 2 → em {janela.intervalo_minutos} min</li>
+              <li>• Contato 3 → em {janela.intervalo_minutos * 2} min</li>
+              <li>• ...</li>
+              <li>
+                • Contato 10 → em {janela.intervalo_minutos * 9} min
+              </li>
+            </ul>
           </div>
         </div>
       </section>
@@ -172,7 +101,7 @@ export function JanelaForm({
           disabled={pending}
           className="px-5 py-3 rounded-lg bg-laranja hover:bg-laranja-escuro disabled:bg-laranja-claro text-white font-heading font-semibold transition"
         >
-          {pending ? "Salvando..." : "Salvar janela"}
+          {pending ? "Salvando..." : "Salvar intervalo"}
         </button>
         {salvouAgora && (
           <span className="text-sm text-green-700 font-heading font-semibold">

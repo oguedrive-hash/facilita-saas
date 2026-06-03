@@ -4,10 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logarEvento } from "@/lib/caio/eventos";
-import {
-  getJanela,
-  proximoSlot,
-} from "@/lib/caio/janela-prospeccao";
 
 export type RelatorioMover = {
   movidos: number;
@@ -27,8 +23,8 @@ const STATUS_PERMITIDOS = new Set([
 /**
  * Move leads inbound (ou em qualquer status nao-outbound) pro fluxo de
  * prospeccao: muda origem='prospeccao', status='aguardando_primeiro_contato',
- * reseta contadores e agenda primeira regra da cadencia de prospeccao
- * respeitando janela.
+ * reseta contadores. NAO agenda primeira regra — o operador precisa clicar
+ * "Disparar agora" na aba Prospeccao pra entrar na fila com intervalo.
  *
  * Mantem chatwoot_conversation_id existente — reutiliza a thread no WhatsApp
  * em vez de criar nova.
@@ -61,19 +57,6 @@ export async function moverLeadsParaProspeccao(
   const admin = createAdminClient();
   const relatorio: RelatorioMover = { movidos: 0, pulados: [] };
 
-  // Pre-busca config + janela por org (cache local)
-  const orgsCache = new Map<
-    string,
-    {
-      janela: ReturnType<typeof getJanela>;
-      primeiraRegra?: {
-        esperar_dias: number;
-        esperar_horas: number;
-        esperar_minutos: number;
-      };
-    }
-  >();
-
   for (const lead of leadsVisiveis) {
     if (!STATUS_PERMITIDOS.has(lead.status)) {
       relatorio.pulados.push({
@@ -82,53 +65,6 @@ export async function moverLeadsParaProspeccao(
         motivo: `status "${lead.status}" não pode ir pra prospecção (já está no fluxo outbound ou em estado especial)`,
       });
       continue;
-    }
-
-    // Le config/janela da org se ainda nao
-    let cfg = orgsCache.get(lead.organization_id);
-    if (!cfg) {
-      const { data: org } = await admin
-        .from("organizations")
-        .select("prospeccao_config, prospeccao_janela")
-        .eq("id", lead.organization_id)
-        .single();
-      const config = org?.prospeccao_config as
-        | {
-            regras?: {
-              nivel: number;
-              esperar_dias: number;
-              esperar_horas: number;
-              esperar_minutos: number;
-              ativo: boolean;
-            }[];
-          }
-        | null;
-      const regrasAtivas = (config?.regras ?? []).filter((r) => r.ativo);
-      const primeira = regrasAtivas.find((r) => r.nivel === 1);
-      cfg = {
-        janela: getJanela(org?.prospeccao_janela),
-        primeiraRegra: primeira
-          ? {
-              esperar_dias: primeira.esperar_dias,
-              esperar_horas: primeira.esperar_horas,
-              esperar_minutos: primeira.esperar_minutos,
-            }
-          : undefined,
-      };
-      orgsCache.set(lead.organization_id, cfg);
-    }
-
-    let proximoContatoEm: string | null = null;
-    if (cfg.primeiraRegra) {
-      const desejado = new Date();
-      desejado.setDate(desejado.getDate() + cfg.primeiraRegra.esperar_dias);
-      desejado.setHours(
-        desejado.getHours() + cfg.primeiraRegra.esperar_horas,
-        desejado.getMinutes() + cfg.primeiraRegra.esperar_minutos,
-        0,
-        0,
-      );
-      proximoContatoEm = proximoSlot(desejado, cfg.janela).toISOString();
     }
 
     const { error: upErr } = await admin
@@ -142,7 +78,7 @@ export async function moverLeadsParaProspeccao(
         numero_reativacao: 0,
         numero_prospeccao: 0,
         proximo_followup_em: null,
-        proximo_contato_em: proximoContatoEm,
+        proximo_contato_em: null,
       })
       .eq("id", lead.id);
     if (upErr) {
