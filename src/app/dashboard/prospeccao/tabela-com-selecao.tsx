@@ -140,6 +140,8 @@ export function TabelaComSelecao({ leads }: { leads: Lead[] }) {
               <span className="text-xs text-emerald-700">
                 ✓ {relatorio.enviados} enviado
                 {relatorio.enviados !== 1 ? "s" : ""}
+                {relatorio.agendados > 0 &&
+                  ` · ${relatorio.agendados} agendado${relatorio.agendados !== 1 ? "s" : ""} (fora da janela/rate limit)`}
                 {relatorio.falhas.length > 0 &&
                   ` · ${relatorio.falhas.length} falha${relatorio.falhas.length !== 1 ? "s" : ""}`}
               </span>

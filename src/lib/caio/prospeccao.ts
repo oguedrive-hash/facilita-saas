@@ -120,10 +120,8 @@ async function contarEnviosUltimaHora(
 
 export async function processarProspeccaoLead(
   lead: LeadProspeccao,
-  opts: { force?: boolean } = {},
 ): Promise<{ ok: true; acao: "enviou" | "reagendou" | "esgotou" } | { error: string }> {
   const supabase = createAdminClient();
-  const force = !!opts.force;
 
   if (!lead.caio_ativo) {
     await supabase
@@ -163,8 +161,11 @@ export async function processarProspeccaoLead(
     return { ok: true, acao: "esgotou" };
   }
 
-  // Modo force (disparo manual pelo admin) pula checagens de janela + rate.
-  if (!force) {
+  // Janela horaria + rate limit SO valem na PRIMEIRA mensagem (proximoNivel=1).
+  // Sao mecanismos de protecao contra ban do WhatsApp em abordagem fria.
+  // A partir da regra 2, ja existe conversa em andamento — manda no delay
+  // exato configurado.
+  if (proximoNivel === 1) {
     const agora = new Date();
     if (!dentroDaJanela(agora, janela)) {
       const proxSlot = proximoSlot(agora, janela);
@@ -220,33 +221,14 @@ export async function processarProspeccaoLead(
     status: "em_prospeccao",
   };
   if (proximaRegra) {
-    const agora = new Date();
+    // Cadencia em andamento — usa o delay configurado direto, sem ajustar
+    // pra janela. Janela so vale na 1a msg (abordagem fria).
     const desejado = calcularProximoEm(
       proximaRegra.esperar_dias,
       proximaRegra.esperar_horas,
       proximaRegra.esperar_minutos,
     );
-    const slot = proximoSlot(desejado, janela);
-    console.log(
-      "[prospeccao:agenda]",
-      lead.id,
-      "regra",
-      proximaRegra.nivel,
-      "esperar",
-      proximaRegra.esperar_dias,
-      "d",
-      proximaRegra.esperar_horas,
-      "h",
-      proximaRegra.esperar_minutos,
-      "min",
-      "agora=",
-      agora.toISOString(),
-      "desejado=",
-      desejado.toISOString(),
-      "slot=",
-      slot.toISOString(),
-    );
-    update.proximo_contato_em = slot.toISOString();
+    update.proximo_contato_em = desejado.toISOString();
   } else {
     // Foi a ULTIMA regra da cadencia de prospeccao e o cliente nao respondeu.
     // Se a org tem follow-up de prospeccao configurado, transiciona pra

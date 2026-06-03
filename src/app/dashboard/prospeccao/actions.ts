@@ -8,16 +8,19 @@ import { digitosTelefone } from "@/lib/caio/telefone";
 
 export type RelatorioDisparo = {
   enviados: number;
+  agendados: number;
   falhas: { leadId: string; nome: string | null; motivo: string }[];
 };
 
 /**
- * Dispara a próxima mensagem da cadência de prospecção pros leads
- * selecionados, ignorando janela horária e rate limit (modo force).
+ * Dispara a primeira mensagem da cadência pros leads selecionados, mas
+ * RESPEITANDO janela horária + rate limit (protecao anti-ban WhatsApp).
  *
- * Pensado pro botão "Disparar agora" em /dashboard/prospeccao com leads
- * em status `aguardando_primeiro_contato`. Só roda em leads que o usuario
- * logado tem acesso (RLS do Supabase decide o que ele enxerga).
+ * Pensado pro botão "Disparar agora" em /dashboard/prospeccao. Se você
+ * tiver 20 leads selecionados e o rate limit for 10/h, os 10 primeiros
+ * disparam imediatamente e os 10 restantes ficam agendados pra +1h.
+ * Se estiver fora da janela (ex: 22h, janela é 9-18h), todos são
+ * agendados pra próxima janela.
  */
 export async function dispararPrimeirasMensagensEmLote(
   leadIds: string[],
@@ -29,7 +32,7 @@ export async function dispararPrimeirasMensagensEmLote(
   if (!user) return { error: "Não autenticado" };
 
   if (leadIds.length === 0) {
-    return { ok: true, relatorio: { enviados: 0, falhas: [] } };
+    return { ok: true, relatorio: { enviados: 0, agendados: 0, falhas: [] } };
   }
 
   // Le os leads usando RLS — se o user nao tem acesso a algum, ele simplesmente
@@ -47,7 +50,7 @@ export async function dispararPrimeirasMensagensEmLote(
     return { error: "Nenhum lead acessível" };
   }
 
-  const relatorio: RelatorioDisparo = { enviados: 0, falhas: [] };
+  const relatorio: RelatorioDisparo = { enviados: 0, agendados: 0, falhas: [] };
   const orgsAfetadas = new Set<string>();
 
   // Antes de disparar, checa se algum dos selecionados tem telefone que ja
@@ -99,20 +102,17 @@ export async function dispararPrimeirasMensagensEmLote(
       continue;
     }
     try {
-      const result = await processarProspeccaoLead(
-        {
-          id: lead.id,
-          nome: lead.nome,
-          telefone: lead.telefone,
-          status: lead.status,
-          organization_id: lead.organization_id,
-          numero_prospeccao: lead.numero_prospeccao,
-          dados_extras: lead.dados_extras as Record<string, string> | null,
-          chatwoot_conversation_id: lead.chatwoot_conversation_id,
-          caio_ativo: lead.caio_ativo,
-        },
-        { force: true },
-      );
+      const result = await processarProspeccaoLead({
+        id: lead.id,
+        nome: lead.nome,
+        telefone: lead.telefone,
+        status: lead.status,
+        organization_id: lead.organization_id,
+        numero_prospeccao: lead.numero_prospeccao,
+        dados_extras: lead.dados_extras as Record<string, string> | null,
+        chatwoot_conversation_id: lead.chatwoot_conversation_id,
+        caio_ativo: lead.caio_ativo,
+      });
       if ("error" in result) {
         relatorio.falhas.push({
           leadId: lead.id,
@@ -122,11 +122,13 @@ export async function dispararPrimeirasMensagensEmLote(
       } else if (result.acao === "enviou") {
         relatorio.enviados++;
         orgsAfetadas.add(lead.organization_id);
+      } else if (result.acao === "reagendou") {
+        relatorio.agendados++;
       } else {
         relatorio.falhas.push({
           leadId: lead.id,
           nome: lead.nome,
-          motivo: `worker devolveu '${result.acao}' (esperado 'enviou')`,
+          motivo: `worker devolveu '${result.acao}' (esperado 'enviou' ou 'reagendou')`,
         });
       }
     } catch (err) {
