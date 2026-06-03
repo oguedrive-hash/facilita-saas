@@ -73,8 +73,8 @@ export function proximoSlot(desejado: Date, janela: Janela): Date {
         return cursor;
       }
       if (hora < janela.hora_fim) {
-        // Dentro da janela — mantem horario original mas zera segundos pra estabilidade
-        cursor.setSeconds(0, 0);
+        // Dentro da janela — devolve o instante exato pra agendamentos
+        // precisos (sem zerar segundos, que causava delay de 1 min).
         return cursor;
       }
       // hora >= hora_fim → avanca pro proximo dia
