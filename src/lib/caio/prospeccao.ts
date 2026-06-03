@@ -220,12 +220,33 @@ export async function processarProspeccaoLead(
     status: "em_prospeccao",
   };
   if (proximaRegra) {
+    const agora = new Date();
     const desejado = calcularProximoEm(
       proximaRegra.esperar_dias,
       proximaRegra.esperar_horas,
       proximaRegra.esperar_minutos,
     );
-    update.proximo_contato_em = proximoSlot(desejado, janela).toISOString();
+    const slot = proximoSlot(desejado, janela);
+    console.log(
+      "[prospeccao:agenda]",
+      lead.id,
+      "regra",
+      proximaRegra.nivel,
+      "esperar",
+      proximaRegra.esperar_dias,
+      "d",
+      proximaRegra.esperar_horas,
+      "h",
+      proximaRegra.esperar_minutos,
+      "min",
+      "agora=",
+      agora.toISOString(),
+      "desejado=",
+      desejado.toISOString(),
+      "slot=",
+      slot.toISOString(),
+    );
+    update.proximo_contato_em = slot.toISOString();
   } else {
     // Foi a ULTIMA regra da cadencia de prospeccao e o cliente nao respondeu.
     // Se a org tem follow-up de prospeccao configurado, transiciona pra
